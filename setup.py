@@ -1,5 +1,5 @@
-import os
 from setuptools import setup, find_packages
+import os
 
 setup(
     name="EchteAI",
@@ -10,7 +10,7 @@ setup(
     long_description=open(os.path.join(os.path.dirname(__file__), 'README.md')).read(),
     long_description_content_type="text/markdown",
     url="https://github.com/EgyipTomi425/EchteAI",
-    packages=find_packages(where="Python/EchteAI"),
+    packages=find_packages(where="Python"),
     package_dir={"": "Python"},
     install_requires=[
         "requests",
