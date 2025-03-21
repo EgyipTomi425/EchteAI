@@ -34,10 +34,10 @@ def get_dataloaders(dataset_class, root, transform=T.Compose([T.ToTensor()]), ba
     return train_dataset, train_loader, val_dataset, val_loader, test_dataset, test_loader
 
 def get_class_mapping(labels_dir=None, predefined_classes=None):
+    class_set = set()
     if predefined_classes:
         class_list = sorted(predefined_classes)
     else:
-        class_set = set()
         if labels_dir and os.path.exists(labels_dir):
             for file in os.listdir(labels_dir):
                 with open(os.path.join(labels_dir, file), "r") as f:
@@ -64,7 +64,7 @@ class KittiDataset(Dataset):
         self.imgs = sorted(os.listdir(self.img_dir))
         if os.path.exists(self.label_dir):
             self.labels = sorted(os.listdir(self.label_dir))
-            self.class_to_idx, self.idx_to_class = get_class_mapping(root, split)
+            self.class_to_idx, self.idx_to_class = get_class_mapping(self.label_dir, split)
         else:
             self.labels = None
             self.class_to_idx, self.idx_to_class = {}, {}
