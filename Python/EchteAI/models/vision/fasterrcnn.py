@@ -2,6 +2,8 @@ import torchvision
 from torchvision.models.detection import fasterrcnn_resnet50_fpn, FasterRCNN_ResNet50_FPN_Weights
 from torchvision.models.detection import fasterrcnn_mobilenet_v3_large_fpn, FasterRCNN_MobileNet_V3_Large_FPN_Weights
 import logging
+import os
+import torch
 
 def setup_fasterrcnn(dataset=None, backbone="resnet50"):
     model_choices = {
@@ -24,4 +26,143 @@ def setup_fasterrcnn(dataset=None, backbone="resnet50"):
 
     logging.info(f"The {backbone} (faster-r-cnn model) is ready.")
 
+    return model
+
+def compute_iou_fasterrcnn(boxA, boxB):
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+    interArea = max(0, xB - xA) * max(0, yB - yA)
+    boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
+    boxBArea = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1])
+    return interArea / float(boxAArea + boxBArea - interArea + 1e-6)
+
+def compute_metrics_fasterrcnn(data_loader, model, device, iou_threshold=0.5):
+    model.eval()
+    total_gt = 0
+    total_tp = 0
+    total_pred = 0
+    iou_list = []
+    with torch.no_grad():
+        for batch_idx, (images, targets) in enumerate(data_loader):
+            if batch_idx > 0:
+                break
+            images = [img.to(device) for img in images]
+            predictions = model(images)
+            for target, prediction in zip(targets, predictions):
+                if "boxes" not in target:
+                    continue
+                gt_boxes = target["boxes"].cpu().numpy()
+                gt_labels = target["labels"].cpu().numpy()
+                total_gt += len(gt_boxes)
+                pred_boxes = prediction["boxes"].cpu().numpy()
+                pred_labels = prediction["labels"].cpu().numpy()
+                pred_scores = prediction["scores"].cpu().numpy()
+                keep = pred_scores >= 0.5
+                pred_boxes = pred_boxes[keep]
+                pred_labels = pred_labels[keep]
+                total_pred += len(pred_boxes)
+                matched = [False] * len(gt_boxes)
+                for pb, pl in zip(pred_boxes, pred_labels):
+                    best_iou = 0
+                    best_idx = -1
+                    for i, (gb, gl) in enumerate(zip(gt_boxes, gt_labels)):
+                        if matched[i]:
+                            continue
+                        if pl != gl:
+                            continue
+                        iou = compute_iou_fasterrcnn(pb, gb)
+                        if iou > best_iou:
+                            best_iou = iou
+                            best_idx = i
+                    if best_iou >= iou_threshold and best_idx != -1:
+                        matched[best_idx] = True
+                        total_tp += 1
+                        iou_list.append(best_iou)
+    accuracy = total_tp / total_gt if total_gt > 0 else 0
+    precision = total_tp / total_pred if total_pred > 0 else 0
+    mean_iou = sum(iou_list) / len(iou_list) if iou_list else 0
+    return {"accuracy": accuracy, "precision": precision, "mean_iou": mean_iou}
+
+def compute_batch_metrics_fasterrcnn(targets, predictions, iou_threshold=0.5):
+    total_gt = 0
+    total_tp = 0
+    total_pred = 0
+    iou_list = []
+    for target, prediction in zip(targets, predictions):
+        if "boxes" not in target:
+            continue
+        gt_boxes = target["boxes"].cpu().numpy()
+        gt_labels = target["labels"].cpu().numpy()
+        total_gt += len(gt_boxes)
+        pred_boxes = prediction["boxes"].cpu().numpy()
+        pred_labels = prediction["labels"].cpu().numpy()
+        pred_scores = prediction["scores"].cpu().numpy()
+        keep = pred_scores >= 0.5
+        pred_boxes = pred_boxes[keep]
+        pred_labels = pred_labels[keep]
+        total_pred += len(pred_boxes)
+        matched = [False] * len(gt_boxes)
+        for pb, pl in zip(pred_boxes, pred_labels):
+            best_iou = 0
+            best_idx = -1
+            for i, (gb, gl) in enumerate(zip(gt_boxes, gt_labels)):
+                if matched[i]:
+                    continue
+                if pl != gl:
+                    continue
+                iou = compute_iou_fasterrcnn(pb, gb)
+                if iou > best_iou:
+                    best_iou = iou
+                    best_idx = i
+            if best_iou >= iou_threshold and best_idx != -1:
+                matched[best_idx] = True
+                total_tp += 1
+                iou_list.append(best_iou)
+    accuracy = total_tp / total_gt if total_gt > 0 else 0
+    precision = total_tp / total_pred if total_pred > 0 else 0
+    mean_iou = sum(iou_list) / len(iou_list) if iou_list else 0
+    return {"accuracy": accuracy, "precision": precision, "mean_iou": mean_iou}
+
+def train_fasterrcnn(model, train_loader, val_loader, device, num_epochs, model_path="model.pth"):
+    if os.path.exists(model_path):
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        logging.info(f"Loaded saved model from {model_path}.")
+    else:
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.00001)
+        logging.info("Training started.")
+        for epoch in range(num_epochs):
+            model.train()
+            running_loss = 0
+            for batch_idx, (images, targets) in enumerate(train_loader):
+                images = [img.to(device) for img in images]
+                targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+                loss_dict = model(images, targets)
+                losses = sum(loss for loss in loss_dict.values())
+                optimizer.zero_grad()
+                losses.backward()
+                optimizer.step()
+                running_loss += losses.item()
+                with torch.no_grad():
+                    model.eval()
+                    predictions = model(images)
+                    batch_metrics = compute_batch_metrics_fasterrcnn(targets, predictions)
+                    model.train()
+                logging.debug(
+                    f"Epoch {epoch+1}, Batch {batch_idx+1}, Loss: {losses.item():.4f}, "
+                    f"Acc: {batch_metrics['accuracy']:.4f}, Prec: {batch_metrics['precision']:.4f}, "
+                    f"mIoU: {batch_metrics['mean_iou']:.4f}"
+                )
+            avg_loss = running_loss / len(train_loader)
+            train_metrics = compute_metrics_fasterrcnn(train_loader, model, device)
+            val_metrics = compute_metrics_fasterrcnn(val_loader, model, device)
+            logging.info(
+                f"Epoch {epoch+1}/{num_epochs} finished, avg loss: {avg_loss:.4f}, "
+                f"Train Acc: {train_metrics['accuracy']:.4f}, Train Prec: {train_metrics['precision']:.4f}, "
+                f"Train mIoU: {train_metrics['mean_iou']:.4f}, Val Acc: {val_metrics['accuracy']:.4f}, "
+                f"Val Prec: {val_metrics['precision']:.4f}, Val mIoU: {val_metrics['mean_iou']:.4f}"
+            )
+        logging.info("Training finished.")
+        torch.save(model.state_dict(), model_path)
     return model

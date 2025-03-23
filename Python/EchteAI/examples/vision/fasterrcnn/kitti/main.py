@@ -16,8 +16,12 @@ def main():
     transform = T.Compose([T.ToTensor()])
 
     train_dataset, train_loader, val_dataset, val_loader, test_dataset, test_loader = dl.get_dataloaders(dl.KittiDataset,root,transform)
+
+    num_epochs = 8
     model = frcnn.setup_fasterrcnn(train_dataset)
     model.to(device)
+    model = frcnn.train_fasterrcnn(model, train_loader, val_loader, device, num_epochs)
+    model.eval()
 
 if __name__ == "__main__":
     main()
