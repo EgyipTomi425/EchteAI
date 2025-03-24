@@ -4,6 +4,7 @@ import EchteAI.models.vision.fasterrcnn as frcnn
 import logging
 import torchvision.transforms as T
 import torch
+import os
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -22,6 +23,12 @@ def main():
     model.to(device)
     model = frcnn.train_fasterrcnn(model, train_loader, val_loader, device, num_epochs)
     model.eval()
+
+    val_out = os.path.join("outputs", "predictions", "validation")
+    test_out = os.path.join("outputs", "predictions", "test")
+    frcnn.run_predictions_fasterrcnn(model, val_loader, device, val_dataset.dataset if hasattr(val_dataset, "dataset") else val_dataset, val_out, evaluate=True, num_batches=2)
+    frcnn.run_predictions_fasterrcnn(model, test_loader, device, test_dataset, test_out, evaluate=False, num_batches=2)
+
 
 if __name__ == "__main__":
     main()

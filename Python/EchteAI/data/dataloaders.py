@@ -29,6 +29,9 @@ def get_dataloaders(dataset_class, root, transform=T.Compose([T.ToTensor()]), ba
         test_dataset, batch_size=batch_size, shuffle=False, collate_fn=lambda batch: tuple(zip(*batch))
     )
 
+    test_dataset.class_to_idx = full_train_dataset.class_to_idx
+    test_dataset.idx_to_class = full_train_dataset.idx_to_class
+
     logging.debug(f"Test loader is ready. It contains {len(test_dataset)} images.")
 
     return train_dataset, train_loader, val_dataset, val_loader, test_dataset, test_loader

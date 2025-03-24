@@ -4,6 +4,8 @@ from torchvision.models.detection import fasterrcnn_mobilenet_v3_large_fpn, Fast
 import logging
 import os
 import torch
+import numpy as np
+import cv2
 
 def setup_fasterrcnn(dataset=None, backbone="resnet50"):
     model_choices = {
@@ -166,3 +168,45 @@ def train_fasterrcnn(model, train_loader, val_loader, device, num_epochs, model_
         logging.info("Training finished.")
         torch.save(model.state_dict(), model_path)
     return model
+
+def run_predictions_fasterrcnn(model, data_loader, device, dataset, output_folder, evaluate=False, num_batches = -1):
+    os.makedirs(output_folder, exist_ok=True)
+    model.to(device)
+    model.eval()
+    if evaluate:
+        metrics = compute_metrics_fasterrcnn(data_loader, model, device)
+        logging.info(f"Metrics on dataset: Acc: {metrics['accuracy']:.4f}, Prec: {metrics['precision']:.4f}, mIoU: {metrics['mean_iou']:.4f}")
+    with torch.no_grad():
+        for batch_idx, (images, targets) in enumerate(data_loader):
+            if num_batches != 0 and batch_idx > num_batches - 1:
+                break
+            images = [img.to(device) for img in images]
+            predictions = model(images)
+            for i, (img, prediction) in enumerate(zip(images, predictions)):
+                image_np = img.mul(255).byte().permute(1, 2, 0).cpu().numpy()
+                image_np = np.ascontiguousarray(image_np)
+                if image_np.dtype != np.uint8:
+                    image_np = image_np.astype(np.uint8)
+                
+                # Ground Truth -> Red
+                if "boxes" in targets[i]:
+                    for box in targets[i]["boxes"]:
+                        x1, y1, x2, y2 = map(int, box.tolist())
+                        cv2.rectangle(image_np, (x1, y1), (x2, y2), (255, 0, 0), 2)
+
+                # Predictions -> Green
+                for j, box in enumerate(prediction["boxes"]):
+                    score = prediction["scores"][j].item()
+                    if score < 0.5:
+                        continue
+                    x1, y1, x2, y2 = map(int, box.tolist())
+                    label_int = prediction["labels"][j].item()
+                    label_name = dataset.idx_to_class.get(label_int, "Unknown")
+                    cv2.rectangle(image_np, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(image_np, f"{label_name}: {score:.2f}", (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+                output_path = os.path.join(output_folder, f"batch{batch_idx}_img{i}.png")
+                image_bgr = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
+                cv2.imwrite(output_path, image_bgr)
+            logging.info(f"Batch {batch_idx} saved.")
