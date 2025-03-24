@@ -6,6 +6,8 @@ import os
 import torch
 import numpy as np
 import cv2
+import torch.ao.quantization as quant
+import EchteAI.models.quantized.quantized_resnet50 as qresnet
 
 def setup_fasterrcnn(dataset=None, backbone="resnet50"):
     model_choices = {
@@ -210,3 +212,49 @@ def run_predictions_fasterrcnn(model, data_loader, device, dataset, output_folde
                 image_bgr = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
                 cv2.imwrite(output_path, image_bgr)
             logging.info(f"Batch {batch_idx} saved.")
+
+def quantize_fasterrcnn(model_fp32, data_loader, number_of_batches=2):
+    model_fp32.eval().to("cpu")
+    logging.info("Loading quantized backbone...")
+
+    quantized_model = qresnet.quantized_resnet50()
+    state_dict = model_fp32.backbone.body.state_dict()
+    quantized_model.load_state_dict(state_dict, strict=False)
+    quantized_model.eval()
+
+    activation_observer = quant.MinMaxObserver.with_args(dtype=torch.quint8, quant_min=0, quant_max=255)
+    weight_observer = quant.default_per_channel_weight_observer
+    quantized_model.qconfig = quant.QConfig(
+        activation=activation_observer,
+        weight=weight_observer
+    )
+
+    logging.info("Calibrate quantized backbone...")
+
+    quant.prepare(quantized_model, inplace=True)
+
+    with torch.no_grad():
+        for batch_idx, (images, _) in enumerate(data_loader):
+            if batch_idx >= number_of_batches:
+                break
+
+            transformed_batch, _ = model_fp32.transform(images)
+
+            if isinstance(transformed_batch, torchvision.models.detection.image_list.ImageList):
+                images_tensor = transformed_batch.tensors
+            else:
+                raise TypeError(f"Nem megfelelő transzformált batch formátum: {type(transformed_batch)}")
+
+            quantized_model(images_tensor)
+
+    quant.convert(quantized_model, inplace=True)
+    quantized_model.eval()
+
+    model_fp32.backbone.body = quantized_model
+    model_fp32.eval()
+
+    logging.info("Loaded quantized backbone.")
+
+    print(model_fp32)
+
+    return model_fp32

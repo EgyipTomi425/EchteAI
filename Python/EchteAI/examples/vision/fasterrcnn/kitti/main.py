@@ -26,9 +26,13 @@ def main():
 
     val_out = os.path.join("outputs", "predictions", "validation")
     test_out = os.path.join("outputs", "predictions", "test")
-    frcnn.run_predictions_fasterrcnn(model, val_loader, device, val_dataset.dataset if hasattr(val_dataset, "dataset") else val_dataset, val_out, evaluate=True, num_batches=2)
-    frcnn.run_predictions_fasterrcnn(model, test_loader, device, test_dataset, test_out, evaluate=False, num_batches=2)
+    #frcnn.run_predictions_fasterrcnn(model, val_loader, device, val_dataset.dataset if hasattr(val_dataset, "dataset") else val_dataset, val_out, evaluate=True, num_batches=2)
+    #frcnn.run_predictions_fasterrcnn(model, test_loader, device, test_dataset, test_out, evaluate=False, num_batches=2)
 
+    device = "cpu"
+    model_quantized = frcnn.quantize_fasterrcnn(model, train_loader)
+    val_out_qint8_static = os.path.join("outputs", "qint8_static", "validation")
+    frcnn.run_predictions_fasterrcnn(model_quantized, val_loader, device, val_dataset.dataset if hasattr(val_dataset, "dataset") else val_dataset, val_out_qint8_static, evaluate=False, num_batches=2)
 
 if __name__ == "__main__":
     main()
