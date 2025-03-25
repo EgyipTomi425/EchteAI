@@ -31,6 +31,8 @@ def main():
 
     device = "cpu"
     model_quantized = frcnn.quantize_fasterrcnn(model, train_loader)
+    model_quantized = frcnn.quantize_dynamic(model_quantized)
+    print(model_quantized)
     val_out_qint8_static = os.path.join("outputs", "qint8_static", "validation")
     #frcnn.run_predictions_fasterrcnn(model_quantized, val_loader, device, val_dataset.dataset if hasattr(val_dataset, "dataset") else val_dataset, val_out_qint8_static, evaluate=False, num_batches=2)
 

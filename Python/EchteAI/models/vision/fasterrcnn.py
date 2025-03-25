@@ -213,6 +213,16 @@ def run_predictions_fasterrcnn(model, data_loader, device, dataset, output_folde
                 cv2.imwrite(output_path, image_bgr)
             logging.info(f"Batch {batch_idx} saved.")
 
+def quantize_dynamic(model):
+    model.to("cpu")
+    model.eval()
+
+    model_quantized = torch.ao.quantization.quantize_dynamic(model)
+    logging.info("Dynamic quantization applied (qint8_dynamic).")
+    
+    model_quantized.eval()
+    return model_quantized.to("cpu")
+
 def quantize_fasterrcnn(model_fp32, data_loader, number_of_batches=2):
     model_fp32.eval().to("cpu")
     logging.info("Loading quantized backbone...")
@@ -254,7 +264,5 @@ def quantize_fasterrcnn(model_fp32, data_loader, number_of_batches=2):
     model_fp32.eval()
 
     logging.info("Loaded quantized backbone.")
-
-    print(model_fp32)
 
     return model_fp32
