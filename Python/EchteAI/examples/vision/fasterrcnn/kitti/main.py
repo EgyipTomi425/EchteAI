@@ -38,8 +38,10 @@ def main():
 
     video_set, video_loader = dl.video_to_dataloader("car_video.mp4", class_to_idx, idx_to_class)
     video_out_qint8_static = os.path.join("outputs", "qint8_static", "video")
-    frcnn.run_predictions_fasterrcnn(model_quantized, video_loader, device, video_set.dataset if hasattr(video_set, "dataset") else video_set, video_out_qint8_static, evaluate=False, num_batches=25)
-    dl.create_video_from_images(video_out_qint8_static)
+    #frcnn.run_predictions_fasterrcnn(model_quantized, video_loader, device, video_set.dataset if hasattr(video_set, "dataset") else video_set, video_out_qint8_static, evaluate=False, num_batches=25)
+    #dl.create_video_from_images(video_out_qint8_static)
+
+    torch.save(model_quantized, "quantized_model.pth")
 
 if __name__ == "__main__":
     main()

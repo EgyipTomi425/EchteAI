@@ -99,7 +99,6 @@ def create_video_from_images(directory, fps=30, output_dir="outputs"):
         os.makedirs(output_dir)
     
     video_output_path = os.path.join(output_dir, 'output_video.mp4')
-    
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     video_output = cv2.VideoWriter(video_output_path, fourcc, fps, (width, height))
     
@@ -115,6 +114,7 @@ def create_video_from_images(directory, fps=30, output_dir="outputs"):
         
         video_output.write(img)
     
+    cv2.destroyAllWindows()
     video_output.release()
     logging.info(f"Video creation completed: {video_output_path}")
 
