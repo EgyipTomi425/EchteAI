@@ -8,6 +8,7 @@ import numpy as np
 import cv2
 import torch.ao.quantization as quant
 import EchteAI.models.quantized.quantized_resnet50 as qresnet
+import time
 
 def setup_fasterrcnn(dataset=None, backbone="resnet50"):
     model_choices = {
@@ -183,7 +184,9 @@ def run_predictions_fasterrcnn(model, data_loader, device, dataset, output_folde
             if num_batches != 0 and batch_idx > num_batches - 1:
                 break
             images = [img.to(device) for img in images]
+            start_time = time.time()
             predictions = model(images)
+            batch_time = time.time() - start_time
             for i, (img, prediction) in enumerate(zip(images, predictions)):
                 image_np = img.mul(255).byte().permute(1, 2, 0).cpu().numpy()
                 image_np = np.ascontiguousarray(image_np)
@@ -211,7 +214,7 @@ def run_predictions_fasterrcnn(model, data_loader, device, dataset, output_folde
                 output_path = os.path.join(output_folder, f"batch{batch_idx}_img{i}.png")
                 image_bgr = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
                 cv2.imwrite(output_path, image_bgr)
-            logging.info(f"Batch {batch_idx} saved.")
+            logging.info(f"Batch {batch_idx} processed in {batch_time:.4f} seconds.")
 
 def quantize_dynamic(model):
     model.to("cpu")
