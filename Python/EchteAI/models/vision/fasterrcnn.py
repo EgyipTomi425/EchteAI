@@ -277,12 +277,12 @@ def backbone_cnn_layers_outputs(model_quantized, image=torch.randn(1000, 500)):
     outputs = {}
     
     for name, layer in model_quantized.backbone.body.named_modules():
-        if isinstance(layer, (torch.ao.nn.quantized.Conv2d, torch.ao.nn.quantized.Linear, torch.ao.nn.quantized.BatchNorm2d)):
+        if isinstance(layer, (torch.ao.nn.quantized.Conv2d)):
             hook = layer.register_forward_hook(
                 lambda m, i, o, name=name: outputs.update({name: torch.dequantize(o)})
             )
             hooks.append(hook)
-        elif isinstance(layer, (torch.nn.Conv2d, torch.nn.Linear)):
+        elif isinstance(layer, (torch.nn.Conv2d)):
             hook = layer.register_forward_hook(
                 lambda m, i, o, name=name: outputs.update({name: o})
             )
@@ -294,3 +294,43 @@ def backbone_cnn_layers_outputs(model_quantized, image=torch.randn(1000, 500)):
         hook.remove()
 
     return outputs
+
+def visualize_cnn_outputs(outputs, output_folder="outputs", filename="activation_heatmap", vmin=-1, vmax=1, depth=-1):
+    os.makedirs(output_folder, exist_ok=True)
+
+    largest_shape = max(outputs.values(), key=lambda x: x.shape[-2:]).shape[-2:]
+    logging.debug(f"Shape is: {largest_shape}.")
+    heatmap = np.zeros(largest_shape, dtype=np.float32)
+    weight_sum = np.zeros(largest_shape, dtype=np.float32)
+
+    for name, feature_map in outputs.items():
+        feature_map = feature_map.cpu().detach().numpy()
+        
+        if feature_map.ndim == 4:  
+            avg_map = np.max(feature_map, axis=(0, 1)).squeeze()
+        elif feature_map.ndim == 3:
+            avg_map = np.max(feature_map, axis=0).squeeze()
+        
+        resized_map = cv2.resize(avg_map, (largest_shape[1], largest_shape[0]), interpolation=cv2.INTER_CUBIC)
+        
+        heatmap += resized_map
+        weight_sum += np.ones_like(resized_map)
+
+        if depth != -1 and depth == 0:
+            break
+        else:
+            depth = depth - 1
+
+    heatmap /= np.maximum(weight_sum, 1e-6)
+
+    if vmin is None or vmax is None:
+        vmin, vmax = heatmap.min(), heatmap.max()
+    
+    heatmap = np.clip((heatmap - vmin) / (vmax - vmin), 0, 1)
+    heatmap = np.uint8(heatmap * 255)
+    logging.debug(f"The Heatmap: {heatmap}")
+    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+
+    output_path = os.path.join(output_folder, f"{filename}.png")
+    cv2.imwrite(output_path, heatmap)
+    logging.info(f"Picture saved: {output_path}.")
