@@ -230,21 +230,21 @@ def quantize_fasterrcnn(model_fp32, data_loader, number_of_batches=2):
     model_fp32.eval().to("cpu")
     logging.info("Loading quantized backbone...")
 
-    quantized_model = qresnet.quantized_resnet50()
-    state_dict = model_fp32.backbone.body.state_dict()
-    quantized_model.load_state_dict(state_dict, strict=False)
-    quantized_model.eval()
+    quantized_resnet = qresnet.quantized_resnet50()
+    resnet_state_dict = model_fp32.backbone.body.state_dict()
+    quantized_resnet.load_state_dict(resnet_state_dict, strict=False)
+    quantized_resnet.eval()
 
     activation_observer = quant.MinMaxObserver.with_args(dtype=torch.quint8, quant_min=0, quant_max=255)
     weight_observer = quant.default_per_channel_weight_observer
-    quantized_model.qconfig = quant.QConfig(
+    quantized_resnet.qconfig = quant.QConfig(
         activation=activation_observer,
         weight=weight_observer
     )
 
     logging.info("Calibrate quantized backbone...")
 
-    quant.prepare(quantized_model, inplace=True)
+    quant.prepare(quantized_resnet, inplace=True)
 
     with torch.no_grad():
         for batch_idx, (images, _) in enumerate(data_loader):
@@ -258,14 +258,39 @@ def quantize_fasterrcnn(model_fp32, data_loader, number_of_batches=2):
             else:
                 raise TypeError(f"Nem megfelelő transzformált batch formátum: {type(transformed_batch)}")
 
-            quantized_model(images_tensor)
+            quantized_resnet(images_tensor)
 
-    quant.convert(quantized_model, inplace=True)
-    quantized_model.eval()
+    quant.convert(quantized_resnet, inplace=True)
+    quantized_resnet.eval()
 
-    model_fp32.backbone.body = quantized_model
-    model_fp32.eval()
+    import copy
+    model_quantized = copy.deepcopy(model_fp32)
+    model_quantized.backbone.body = quantized_resnet
+    model_quantized.eval()
 
     logging.info("Loaded quantized backbone.")
 
-    return model_fp32
+    return model_quantized
+
+def backbone_cnn_layers_outputs(model_quantized, image=torch.randn(1000, 500)):
+    hooks = []
+    outputs = {}
+    
+    for name, layer in model_quantized.backbone.body.named_modules():
+        if isinstance(layer, (torch.ao.nn.quantized.Conv2d, torch.ao.nn.quantized.Linear, torch.ao.nn.quantized.BatchNorm2d)):
+            hook = layer.register_forward_hook(
+                lambda m, i, o, name=name: outputs.update({name: torch.dequantize(o)})
+            )
+            hooks.append(hook)
+        elif isinstance(layer, (torch.nn.Conv2d, torch.nn.Linear)):
+            hook = layer.register_forward_hook(
+                lambda m, i, o, name=name: outputs.update({name: o})
+            )
+            hooks.append(hook)
+    
+    output = model_quantized(image.unsqueeze(0))
+    
+    for hook in hooks:
+        hook.remove()
+
+    return outputs

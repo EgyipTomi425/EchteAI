@@ -6,6 +6,20 @@ import cv2
 import os
 import logging
 import re
+import numpy as np
+
+def save_image(image, filename="image", output_folder="outputs"):
+    os.makedirs(output_folder, exist_ok=True)
+    output_path = os.path.join(output_folder, filename + ".png")
+
+    if isinstance(image, torch.Tensor):
+        image = image.cpu().detach().numpy()
+        image = np.transpose(image, (1, 2, 0))
+        image = (image * 255).astype(np.uint8)
+
+    cv2.imwrite(output_path, image)
+    logging.info(f"Picture saved: {output_path}")
+
 
 def get_dataloaders(dataset_class, root, transform=T.Compose([T.ToTensor()]), batch_size=32, train_split=0.8, seed=42, shuffle_train=True, **dataset_args):
     full_train_dataset = dataset_class(root=root, split="training", transforms=transform, **dataset_args)
