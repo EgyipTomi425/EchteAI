@@ -295,7 +295,7 @@ def backbone_cnn_layers_outputs(model_quantized, image=torch.randn(1000, 500)):
 
     return outputs
 
-def visualize_cnn_outputs(outputs, output_folder="outputs", filename="activation_heatmap", vmin=-1, vmax=1, depth=-1):
+def visualize_cnn_outputs(outputs, output_folder="outputs", filename="activation_heatmap", vmin=None, vmax=None, depth=-1):
     os.makedirs(output_folder, exist_ok=True)
 
     largest_shape = max(outputs.values(), key=lambda x: x.shape[-2:]).shape[-2:]
