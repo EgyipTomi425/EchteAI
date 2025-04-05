@@ -295,37 +295,46 @@ def backbone_cnn_layers_outputs(model_quantized, image=torch.randn(1000, 500)):
 
     return outputs
 
-def visualize_cnn_outputs(outputs, output_folder="outputs", filename="activation_heatmap", vmin=None, vmax=None, depth=-1):
+def visualize_cnn_outputs(outputs, output_folder="outputs", filename="activation_heatmap", vmin=None, vmax=None, depth=-1, layer=None):
     os.makedirs(output_folder, exist_ok=True)
 
-    largest_shape = max(outputs.values(), key=lambda x: x.shape[-2:]).shape[-2:]
-    logging.debug(f"Shape is: {largest_shape}.")
+    output_items = list(outputs.items())
+
+    largest_shape = max([feat.shape[-2:] for _, feat in output_items])
+    logging.debug(f"Largest shape is: {largest_shape}.")
+
     heatmap = np.zeros(largest_shape, dtype=np.float32)
     weight_sum = np.zeros(largest_shape, dtype=np.float32)
 
-    for name, feature_map in outputs.items():
+    if layer is not None:
+        if not (0 < layer < len(output_items)):
+            raise ValueError(f"Invalid layer index: {layer}. It must be between 1 and {len(output_items)}.")
+        output_items = [output_items[layer-1]]
+
+    for name, feature_map in output_items:
         feature_map = feature_map.cpu().detach().numpy()
-        
-        if feature_map.ndim == 4:  
+
+        if feature_map.ndim == 4:
             avg_map = np.max(feature_map, axis=(0, 1)).squeeze()
         elif feature_map.ndim == 3:
             avg_map = np.max(feature_map, axis=0).squeeze()
-        
+        else:
+            raise ValueError(f"Unexpected feature map shape for layer '{name}': {feature_map.shape}")
+
         resized_map = cv2.resize(avg_map, (largest_shape[1], largest_shape[0]), interpolation=cv2.INTER_CUBIC)
-        
         heatmap += resized_map
         weight_sum += np.ones_like(resized_map)
 
         if depth != -1 and depth == 0:
             break
         else:
-            depth = depth - 1
+            depth -= 1
 
     heatmap /= np.maximum(weight_sum, 1e-6)
 
     if vmin is None or vmax is None:
         vmin, vmax = heatmap.min(), heatmap.max()
-    
+
     heatmap = np.clip((heatmap - vmin) / (vmax - vmin), 0, 1)
     heatmap = np.uint8(heatmap * 255)
     logging.debug(f"The Heatmap: {heatmap}")

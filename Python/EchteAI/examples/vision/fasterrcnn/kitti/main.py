@@ -52,7 +52,7 @@ def main():
     for layer_name, layer_output in outputs.items():
         print(f"Layer: {layer_name}, Output: {layer_output[0, 0, :10, :10]}")
 
-    frcnn.visualize_cnn_outputs(outputs, depth=1)
+    frcnn.visualize_cnn_outputs(outputs)
 
 if __name__ == "__main__":
     main()
