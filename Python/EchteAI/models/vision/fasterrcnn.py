@@ -235,7 +235,7 @@ def quantize_fasterrcnn(model_fp32, data_loader, number_of_batches=2):
     quantized_resnet.load_state_dict(resnet_state_dict, strict=False)
     quantized_resnet.eval()
 
-    activation_observer = quant.MinMaxObserver.with_args(dtype=torch.quint8, quant_min=0, quant_max=255)
+    activation_observer = quant.HistogramObserver.with_args(dtype=torch.quint8, quant_min=0, quant_max=255)
     weight_observer = quant.default_per_channel_weight_observer
     quantized_resnet.qconfig = quant.QConfig(
         activation=activation_observer,
@@ -248,7 +248,7 @@ def quantize_fasterrcnn(model_fp32, data_loader, number_of_batches=2):
 
     with torch.no_grad():
         for batch_idx, (images, _) in enumerate(data_loader):
-            if batch_idx >= number_of_batches:
+            if batch_idx >= number_of_batches and number_of_batches >= 0:
                 break
 
             transformed_batch, _ = model_fp32.transform(images)
@@ -294,6 +294,19 @@ def backbone_cnn_layers_outputs(model_quantized, image=torch.randn(1000, 500)):
         hook.remove()
 
     return outputs
+
+def absolute_differences(outputs1, outputs2):
+    abs_diffs = {}
+    for key in outputs1:
+        if key in outputs2:
+            if outputs1[key].shape == outputs2[key].shape:
+                diff = torch.abs(outputs1[key] - outputs2[key])
+                abs_diffs[key] = diff
+            else:
+                print(f"Shape mismatch at layer '{key}', skipping.")
+        else:
+            print(f"Layer '{key}' not found in both outputs.")
+    return abs_diffs
 
 def visualize_cnn_outputs(outputs, output_folder="outputs", filename="activation_heatmap", vmin=None, vmax=None, depth=-1, layer=None):
     os.makedirs(output_folder, exist_ok=True)

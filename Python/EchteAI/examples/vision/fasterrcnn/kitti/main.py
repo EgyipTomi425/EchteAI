@@ -8,6 +8,23 @@ import os
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
+file_handler = logging.FileHandler('output.log', mode='a', encoding='utf-8')
+file_handler.setLevel(logging.DEBUG)
+
+# Azonnali flush minden logolás után
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+file_handler.flush = lambda: None  # Kikapcsolja a pufferelést
+
+# Konzolos loggolás
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+
+logging.basicConfig(level=logging.DEBUG, handlers=[file_handler, console_handler])
+
+logger = logging.getLogger()
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
 def main():
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     root = "./downloads"
@@ -33,9 +50,9 @@ def main():
     device = "cpu"
     model_quantized = frcnn.quantize_fasterrcnn(model, train_loader)
     model_quantized = frcnn.quantize_dynamic(model_quantized)
-    print(model_quantized)
+    #print(model_quantized)
     val_out_qint8_static = os.path.join("outputs", "qint8_static", "validation")
-    #frcnn.run_predictions_fasterrcnn(model_quantized, val_loader, device, val_dataset.dataset if hasattr(val_dataset, "dataset") else val_dataset, val_out_qint8_static, evaluate=False, num_batches=3)
+    #frcnn.run_predictions_fasterrcnn(model_quantized, val_loader, device, val_dataset.dataset if hasattr(val_dataset, "dataset") else val_dataset, val_out_qint8_static, evaluate=True, num_batches=3)
 
     video_set, video_loader = dl.video_to_dataloader("car_video.mp4", class_to_idx, idx_to_class)
     video_out_qint8_static = os.path.join("outputs", "qint8_static", "video")
@@ -48,11 +65,12 @@ def main():
     first_image = first_batch[0][13].to(device)
     dl.save_image(first_image)
 
-    outputs = frcnn.backbone_cnn_layers_outputs(model_quantized, first_image)
-    for layer_name, layer_output in outputs.items():
-        print(f"Layer: {layer_name}, Output: {layer_output[0, 0, :10, :10]}")
-
-    frcnn.visualize_cnn_outputs(outputs)
+    outputs1 = frcnn.backbone_cnn_layers_outputs(model_quantized, first_image)
+    outputs2 = frcnn.backbone_cnn_layers_outputs(model, first_image)
+    outputs_diff = frcnn.absolute_differences(outputs1, outputs2)
+    frcnn.visualize_cnn_outputs(outputs1)
+    frcnn.visualize_cnn_outputs(outputs_diff, filename="activation_difference_heatmap")
+    frcnn.visualize_cnn_outputs(outputs_diff, filename="activation_difference_heatmap_layer1", layer=1)
 
 if __name__ == "__main__":
     main()
