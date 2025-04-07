@@ -73,7 +73,9 @@ def main():
     frcnn.visualize_cnn_outputs(outputs_diffs, filename="activation_difference_heatmap")
     frcnn.visualize_cnn_outputs(outputs_diffs, filename="activation_difference_heatmap_layer1", layer=1)
     frcnn.visualize_cnn_outputs(outputs_percentage_diffs, filename="activation_difference_heatmap_percentage")
-    frcnn.visualize_cnn_outputs(outputs_percentage_diffs, filename="activation_difference_heatmap_percentage_layer1", layer=1)
+    frcnn.visualize_cnn_outputs(outputs_percentage_diffs, filename="activation_difference_heatmap_percentage_layer1")
+    frcnn.fit_and_plot_distribution(outputs1, outputs_diffs, layer=1)
+    frcnn.fit_and_plot_distribution(outputs1, outputs_percentage_diffs, layer=1, filename="distribution_fit_percentage")
 
 if __name__ == "__main__":
     main()
