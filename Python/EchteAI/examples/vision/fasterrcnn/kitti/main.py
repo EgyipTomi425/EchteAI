@@ -67,10 +67,13 @@ def main():
 
     outputs1 = frcnn.backbone_cnn_layers_outputs(model_quantized, first_image)
     outputs2 = frcnn.backbone_cnn_layers_outputs(model, first_image)
-    outputs_diff = frcnn.absolute_differences(outputs1, outputs2)
+    outputs_diffs = frcnn.absolute_differences(outputs1, outputs2)
+    outputs_percentage_diffs = frcnn.percentage_differences(outputs1, outputs2)
     frcnn.visualize_cnn_outputs(outputs1)
-    frcnn.visualize_cnn_outputs(outputs_diff, filename="activation_difference_heatmap")
-    frcnn.visualize_cnn_outputs(outputs_diff, filename="activation_difference_heatmap_layer1", layer=1)
+    frcnn.visualize_cnn_outputs(outputs_diffs, filename="activation_difference_heatmap")
+    frcnn.visualize_cnn_outputs(outputs_diffs, filename="activation_difference_heatmap_layer1", layer=1)
+    frcnn.visualize_cnn_outputs(outputs_percentage_diffs, filename="activation_difference_heatmap_percentage")
+    frcnn.visualize_cnn_outputs(outputs_percentage_diffs, filename="activation_difference_heatmap_percentage_layer1", layer=1)
 
 if __name__ == "__main__":
     main()

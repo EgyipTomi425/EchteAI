@@ -308,6 +308,21 @@ def absolute_differences(outputs1, outputs2):
             print(f"Layer '{key}' not found in both outputs.")
     return abs_diffs
 
+def percentage_differences(outputs1, outputs2):
+    percent_diffs = {}
+    for key in outputs1:
+        if key in outputs2:
+            if outputs1[key].shape == outputs2[key].shape:
+                diff = torch.abs(outputs1[key] - outputs2[key])
+                base = torch.abs(outputs1[key])
+                percent = torch.where(base == 0, torch.ones_like(base), diff / base)
+                percent_diffs[key] = percent
+            else:
+                print(f"Shape mismatch at layer '{key}', skipping.")
+        else:
+            print(f"Layer '{key}' not found in both outputs.")
+    return percent_diffs
+
 def visualize_cnn_outputs(outputs, output_folder="outputs", filename="activation_heatmap", vmin=None, vmax=None, depth=-1, layer=None):
     os.makedirs(output_folder, exist_ok=True)
 
