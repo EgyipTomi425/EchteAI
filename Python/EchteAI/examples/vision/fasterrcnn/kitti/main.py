@@ -5,6 +5,7 @@ import logging
 import torchvision.transforms as T
 import torch
 import os
+import onnx
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -64,6 +65,7 @@ def main():
     first_batch = next(iter(val_loader))
     first_image = first_batch[0][13].to(device)
     dl.save_image(first_image)
+    torch.onnx.export(model, first_batch, "./outputs/model.onnx")
 
     outputs1 = frcnn.backbone_cnn_layers_outputs(model_quantized, first_image)
     outputs2 = frcnn.backbone_cnn_layers_outputs(model, first_image)
