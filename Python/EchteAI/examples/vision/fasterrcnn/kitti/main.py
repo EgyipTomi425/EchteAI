@@ -65,7 +65,10 @@ def main():
     first_batch = next(iter(val_loader))
     first_image = first_batch[0][13].to(device)
     dl.save_image(first_image)
-    torch.onnx.export(model, first_batch, "./outputs/model.onnx")
+    #frcnn.compare_models_visual(model, model_quantized, video_loader, device, video_set.dataset if hasattr(video_set, "dataset") else video_set, video_out_qint8_static, num_batches=3)
+    dl.create_video_from_images(video_out_qint8_static)
+
+    #torch.onnx.export(model, first_batch, "./outputs/model.onnx")
 
     outputs1 = frcnn.backbone_cnn_layers_outputs(model_quantized, first_image)
     outputs2 = frcnn.backbone_cnn_layers_outputs(model, first_image)

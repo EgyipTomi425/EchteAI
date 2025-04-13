@@ -128,7 +128,11 @@ def create_video_from_images(directory, fps=30, output_dir="outputs"):
         
         video_output.write(img)
     
-    cv2.destroyAllWindows()
+    try:
+        cv2.destroyAllWindows()
+    except cv2.error:
+        pass
+
     video_output.release()
     logging.info(f"Video creation completed: {video_output_path}")
 

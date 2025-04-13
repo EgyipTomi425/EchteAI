@@ -10,6 +10,7 @@ import torch.ao.quantization as quant
 import EchteAI.models.quantized.quantized_resnet50 as qresnet
 import time
 import matplotlib.pyplot as plt
+from torchvision.models.detection.image_list import ImageList
 
 def setup_fasterrcnn(dataset=None, backbone="resnet50"):
     model_choices = {
@@ -446,3 +447,127 @@ def fit_and_plot_distribution(outputs1, outputs2, output_folder="outputs", filen
     path_3 = os.path.join(output_folder, f"{filename}_distribution.png")
     plt.savefig(path_3)
     plt.close()
+
+def compare_models_visual(model1, model2, data_loader, device, dataset, output_folder, num_batches=1):
+
+    os.makedirs(output_folder, exist_ok=True)
+    model1.eval().to(device)
+    model2.eval().to(device)
+
+    static_vmin, static_vmax = None, None
+
+    def get_feature_heatmap(feats, img_shape):
+        heatmap = None
+        count = 0
+        for name, fmap in feats.items():
+            if isinstance(fmap, torch.Tensor):
+                fmap = fmap.detach().cpu()
+            if fmap.ndim == 4:
+                fmap = fmap.squeeze(0)
+            if fmap.ndim == 3:
+                fmap = torch.max(fmap, dim=0).values
+            elif fmap.ndim != 2:
+                continue
+
+            fmap_np = fmap.numpy()
+            if np.any(np.isnan(fmap_np)) or np.any(np.isinf(fmap_np)):
+                continue
+
+            resized = cv2.resize(fmap_np, (img_shape[1], img_shape[0]), interpolation=cv2.INTER_CUBIC)
+            heatmap = resized if heatmap is None else heatmap + resized
+            count += 1
+
+        if heatmap is not None and count > 0:
+            heatmap /= count
+        else:
+            heatmap = np.zeros(img_shape, dtype=np.float32)
+
+        return heatmap
+
+    def extract_conv_features(model, image_tensor):
+        features = {}
+        hooks = []
+
+        def register_hooks(module, name):
+            if isinstance(module, (torch.nn.Conv2d, torch.ao.nn.quantized.Conv2d)):
+                hooks.append(
+                    module.register_forward_hook(
+                        lambda m, i, o: features.update({name: torch.dequantize(o) if hasattr(o, "dequantize") else o})
+                    )
+                )
+
+        for name, module in model.backbone.body.named_modules():
+            register_hooks(module, name)
+
+        with torch.no_grad():
+            model(image_tensor.unsqueeze(0).to("cpu"))
+
+        for hook in hooks:
+            hook.remove()
+        return features
+
+    def normalize_heatmap(hmap, vmin, vmax):
+        hmap = np.clip((hmap - vmin) / (vmax - vmin + 1e-5), 0, 1)
+        hmap = np.uint8(hmap * 255)
+        return cv2.applyColorMap(hmap, cv2.COLORMAP_JET)
+
+    with torch.no_grad():
+        for batch_idx, (images, targets) in enumerate(data_loader):
+            if batch_idx >= num_batches:
+                break
+            images = [img.to(device) for img in images]
+            predictions1 = model1(images)
+            predictions2 = model2(images)
+
+            for i, (img_tensor, pred1, pred2) in enumerate(zip(images, predictions1, predictions2)):
+                image_np = img_tensor.mul(255).byte().permute(1, 2, 0).cpu().numpy()
+                image_np = np.ascontiguousarray(image_np)
+                h, w, _ = image_np.shape
+
+                vis_pred1 = image_np.copy()
+                vis_pred2 = image_np.copy()
+
+                if "boxes" in targets[i]:
+                    for box in targets[i]["boxes"]:
+                        x1, y1, x2, y2 = map(int, box.tolist())
+                        cv2.rectangle(vis_pred1, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                        cv2.rectangle(vis_pred2, (x1, y1), (x2, y2), (255, 0, 0), 2)
+
+                for box, score, label in zip(pred1["boxes"], pred1["scores"], pred1["labels"]):
+                    if score < 0.5:
+                        continue
+                    x1, y1, x2, y2 = map(int, box.tolist())
+                    label_name = dataset.idx_to_class.get(label.item(), "Unknown")
+                    cv2.rectangle(vis_pred1, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(vis_pred1, f"{label_name}: {score:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+                for box, score, label in zip(pred2["boxes"], pred2["scores"], pred2["labels"]):
+                    if score < 0.5:
+                        continue
+                    x1, y1, x2, y2 = map(int, box.tolist())
+                    label_name = dataset.idx_to_class.get(label.item(), "Unknown")
+                    cv2.rectangle(vis_pred2, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(vis_pred2, f"{label_name}: {score:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+                feats1 = extract_conv_features(model1, img_tensor.cpu())
+                feats2 = extract_conv_features(model2, img_tensor.cpu())
+
+                feat1_map = get_feature_heatmap(feats1, (h, w))
+                feat2_map = get_feature_heatmap(feats2, (h, w))
+
+                if static_vmin is None or static_vmax is None:
+                    static_vmin = feat1_map.min()
+                    static_vmax = feat1_map.max()
+
+                feat1_colormap = normalize_heatmap(feat1_map, static_vmin, static_vmax)
+                feat2_colormap = normalize_heatmap(feat2_map, static_vmin, static_vmax)
+
+                pred1_bgr = cv2.cvtColor(vis_pred1, cv2.COLOR_RGB2BGR)
+                pred2_bgr = cv2.cvtColor(vis_pred2, cv2.COLOR_RGB2BGR)
+
+                top_row = np.hstack((pred1_bgr, pred2_bgr))
+                bottom_row = np.hstack((feat1_colormap, feat2_colormap))
+                combined = np.vstack((top_row, bottom_row))
+
+                output_path = os.path.join(output_folder, f"batch{batch_idx}_img{i}.png")
+                cv2.imwrite(output_path, combined)
