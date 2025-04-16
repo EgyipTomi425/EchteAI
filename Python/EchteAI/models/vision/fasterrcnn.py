@@ -513,7 +513,7 @@ def compare_models_visual(model1, model2, data_loader, device, dataset, output_f
 
     with torch.no_grad():
         for batch_idx, (images, targets) in enumerate(data_loader):
-            if batch_idx >= num_batches && num_batches > -1:
+            if batch_idx >= num_batches and num_batches > -1:
                 break
             images = [img.to(device) for img in images]
             predictions1 = model1(images)
