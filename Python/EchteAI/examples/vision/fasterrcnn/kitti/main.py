@@ -58,21 +58,22 @@ def main():
 
     video_set, video_loader = dl.video_to_dataloader("car_video.mp4", class_to_idx, idx_to_class)
     video_out_qint8_static = os.path.join("outputs", "qint8_static", "video")
-    frcnn.run_predictions_fasterrcnn(model_quantized, video_loader, device, video_set.dataset if hasattr(video_set, "dataset") else video_set, video_out_qint8_static, evaluate=False, num_batches=3)
-    #dl.create_video_from_images(video_out_qint8_static)
+    #frcnn.run_predictions_fasterrcnn(model_quantized, video_loader, device, video_set.dataset if hasattr(video_set, "dataset") else video_set, video_out_qint8_static, evaluate=False, num_batches=3)
+    frcnn.compare_models_visual(model, model_quantized, video_loader, device, video_set.dataset if hasattr(video_set, "dataset") else video_set, video_out_qint8_static, num_batches=-1)
+    dl.create_video_from_images(video_out_qint8_static)
 
     #torch.save(model_quantized, "quantized_model.pth")
 
-    first_batch = next(iter(val_loader))
-    first_image = first_batch[0][13].to(device)
-    dl.save_image(first_image)
-    frcnn.compare_models_visual(model, model_quantized, video_loader, device, video_set.dataset if hasattr(video_set, "dataset") else video_set, video_out_qint8_static, num_batches=-1)
-    dl.create_video_from_images(video_out_qint8_static)
+
 
     images, _ = next(iter(val_loader))
     images = torch.stack([F.interpolate(img.unsqueeze(0), size=(375, 1242), mode="bilinear", align_corners=False).squeeze(0) for img in images], dim=0).to(device)
     images = images[:32]
     torch.onnx.export(model, images[:15], "./outputs/model.onnx")
+
+    first_batch = next(iter(val_loader))
+    first_image = first_batch[0][13].to(device)
+    dl.save_image(first_image)
 
     outputs1 = frcnn.backbone_cnn_layers_outputs(model_quantized, first_image)
     outputs2 = frcnn.backbone_cnn_layers_outputs(model, first_image)
