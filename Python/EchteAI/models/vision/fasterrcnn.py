@@ -182,8 +182,10 @@ def run_predictions_fasterrcnn(model, data_loader, device, dataset, output_folde
         metrics = compute_metrics_fasterrcnn(data_loader, model, device)
         logging.info(f"Metrics on dataset: Acc: {metrics['accuracy']:.4f}, Prec: {metrics['precision']:.4f}, mIoU: {metrics['mean_iou']:.4f}")
     with torch.no_grad():
+        print("sssadsa")
         for batch_idx, (images, targets) in enumerate(data_loader):
-            if num_batches != 0 and batch_idx > num_batches - 1:
+            print(f"iteration: {batch_idx}")
+            if num_batches > 0 and batch_idx > num_batches - 1:
                 break
             images = [img.to(device) for img in images]
             start_time = time.time()
