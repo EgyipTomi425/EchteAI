@@ -11,6 +11,7 @@ import EchteAI.models.quantized.quantized_resnet50 as qresnet
 import time
 import matplotlib.pyplot as plt
 from torchvision.models.detection.image_list import ImageList
+from collections import OrderedDict
 
 def setup_fasterrcnn(dataset=None, backbone="resnet50"):
     model_choices = {
@@ -451,7 +452,6 @@ def fit_and_plot_distribution(outputs1, outputs2, output_folder="outputs", filen
     plt.close()
 
 def compare_models_visual(model1, model2, data_loader, device, dataset, output_folder, num_batches=1):
-
     os.makedirs(output_folder, exist_ok=True)
     model1.eval().to(device)
     model2.eval().to(device)
@@ -573,3 +573,47 @@ def compare_models_visual(model1, model2, data_loader, device, dataset, output_f
 
                 output_path = os.path.join(output_folder, f"batch{batch_idx}_img{i}.png")
                 cv2.imwrite(output_path, combined)
+
+def compare_direct_vs_manual_pipeline(model, images, device):
+    logging.info("=== Comparison: full forward vs. manual pipeline (batch) ===")
+    model.eval()
+    images = [img.to(device) for img in images]
+
+    with torch.no_grad():
+        t0 = time.time()
+        full_output = model(images)
+        t1 = time.time()
+
+    with torch.no_grad():
+        t2 = time.time()
+        img_list, _ = model.transform(images)
+        feats = model.backbone(img_list.tensors)
+        if isinstance(feats, torch.Tensor):
+            feats = OrderedDict([("0", feats)])
+        elif isinstance(feats, (list, tuple)):
+            feats = OrderedDict((str(i), f) for i, f in enumerate(feats))
+        elif isinstance(feats, dict):
+            feats = OrderedDict(feats)
+        else:
+            raise TypeError(f"Unsupported feature type: {type(feats)}")
+        proposals, _ = model.rpn(img_list, feats, targets=None)
+        detections, _ = model.roi_heads(feats, proposals, img_list.image_sizes, targets=None)
+        orig_sizes = [(img.shape[-2], img.shape[-1]) for img in images]
+        detections = model.transform.postprocess(detections, img_list.image_sizes, orig_sizes)
+        t3 = time.time()
+
+    logging.info(f"⏱️ Full forward time:  {(t1 - t0):.4f} s")
+    logging.info(f"⏱️ Manual pipeline time: {(t3 - t2):.4f} s")
+
+    for i, (full, manual) in enumerate(zip(full_output, detections)):
+        logging.info(f"\n📷 Image {i}:")
+        logging.info(f"📦 Box count - Full: {len(full['boxes'])}, Manual: {len(manual['boxes'])}")
+        if len(full['boxes']) and len(manual['boxes']):
+            box_diff = torch.abs(full['boxes'] - manual['boxes']).mean().item()
+            score_diff = torch.abs(full['scores'] - manual['scores']).mean().item()
+            label_diff = int((full['labels'] != manual['labels']).sum().item())
+            logging.info(f"🔢 Avg. box difference:   {box_diff:.6f}")
+            logging.info(f"🔢 Avg. score difference: {score_diff:.6f}")
+            logging.info(f"❗ Label mismatches:      {label_diff}")
+        else:
+            logging.warning("No detected boxes in either result.")
