@@ -4,6 +4,7 @@ from torchvision.models.detection import fasterrcnn_mobilenet_v3_large_fpn, Fast
 import logging
 import os
 import torch
+import torch.nn as nn
 import numpy as np
 import cv2
 import torch.ao.quantization as quant
@@ -617,3 +618,75 @@ def compare_direct_vs_manual_pipeline(model, images, device):
             logging.info(f"❗ Label mismatches:      {label_diff}")
         else:
             logging.warning("No detected boxes in either result.")
+
+class FeatureExtractor(nn.Module):
+    def __init__(self, transform, backbone):
+        super().__init__()
+        self.transform = transform
+        self.backbone = backbone
+
+    def forward(self, images):
+        img_list, _ = self.transform(images)
+        features = self.backbone(img_list.tensors)
+
+        if isinstance(features, torch.Tensor):
+            features = OrderedDict([("0", features)])
+        elif isinstance(features, (list, tuple)):
+            features = OrderedDict((str(i), f) for i, f in enumerate(features))
+        elif isinstance(features, dict):
+            features = OrderedDict(features)
+        else:
+            raise TypeError(f"Unsupported feature type: {type(features)}")
+
+        return img_list, features
+
+class DetectorHead(nn.Module):
+    def __init__(self, rpn, roi_heads, postprocess):
+        super().__init__()
+        self.rpn = rpn
+        self.roi_heads = roi_heads
+        self.postprocess = postprocess
+
+    def forward(self, img_list, features, orig_sizes):
+        proposals, _ = self.rpn(img_list, features, targets=None)
+        detections, _ = self.roi_heads(features, proposals, img_list.image_sizes, targets=None)
+        detections = self.postprocess(detections, img_list.image_sizes, orig_sizes)
+        return detections
+
+def split_frcnn_pipeline(model, images, device):
+    logging.info("=== Comparison: full forward vs. manual pipeline (batch) ===")
+    model.eval()
+    images = [img.to(device) for img in images]
+
+    # Split model into two
+    feature_extractor = FeatureExtractor(model.transform, model.backbone).to(device)
+    detector_head = DetectorHead(model.rpn, model.roi_heads, model.transform.postprocess).to(device)
+
+    with torch.no_grad():
+        t0 = time.time()
+        full_output = model(images)
+        t1 = time.time()
+
+        t2 = time.time()
+        img_list, feats = feature_extractor(images)
+        orig_sizes = [(img.shape[-2], img.shape[-1]) for img in images]
+        detections = detector_head(img_list, feats, orig_sizes)
+        t3 = time.time()
+
+    logging.info(f"⏱️ Full forward time:  {(t1 - t0):.4f} s")
+    logging.info(f"⏱️ Manual pipeline time: {(t3 - t2):.4f} s")
+
+    for i, (full, manual) in enumerate(zip(full_output, detections)):
+        logging.info(f"\n📷 Image {i}:")
+        logging.info(f"📦 Box count - Full: {len(full['boxes'])}, Manual: {len(manual['boxes'])}")
+        if len(full['boxes']) and len(manual['boxes']):
+            box_diff = torch.abs(full['boxes'] - manual['boxes']).mean().item()
+            score_diff = torch.abs(full['scores'] - manual['scores']).mean().item()
+            label_diff = int((full['labels'] != manual['labels']).sum().item())
+            logging.info(f"🔢 Avg. box difference:   {box_diff:.6f}")
+            logging.info(f"🔢 Avg. score difference: {score_diff:.6f}")
+            logging.info(f"❗ Label mismatches:      {label_diff}")
+        else:
+            logging.warning("No detected boxes in either result.")
+
+    return feature_extractor, detector_head
