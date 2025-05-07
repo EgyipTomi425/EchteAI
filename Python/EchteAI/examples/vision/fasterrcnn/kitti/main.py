@@ -69,14 +69,33 @@ def main():
     images, _ = next(iter(val_loader))
     images = torch.stack([F.interpolate(img.unsqueeze(0), size=(375, 1242), mode="bilinear", align_corners=False).squeeze(0) for img in images], dim=0).to(device)
     images = images[:32]
-    torch.onnx.export(model.backbone, images[:15], "./outputs/model.onnx")
+    #torch.onnx.export(model.backbone, images[:15], "./outputs/model.onnx")
     first_batch = next(iter(val_loader))
     first_image = first_batch[0][13].to(device)
     dl.save_image(first_image)
-    feature_extractor, detector_head = frcnn.split_frcnn_pipeline(model, first_batch[0], device)
-    torch.onnx.export(feature_extractor, images[:15], "./outputs/feature_extractor.onnx")
-    transformed_batch = feature_extractor(images[:15])
-    torch.onnx.export(detector_head, transformed_batch, "./outputs/detector_head.onnx")
+
+    feature_extractor, detector_head = frcnn.split_frcnn_pipeline(model, images[:15], device)
+    tensors, image_sizes, orig_sizes_tensor, *feats = feature_extractor(images[:15])
+
+    torch.onnx.export(
+        feature_extractor,
+        (images[:15],),
+        "./outputs/feature_extractor.onnx",
+        input_names=["images"],
+        output_names=["tensors", "image_sizes", "orig_sizes"] + [f"feat{i}" for i in range(len(feats))],
+        opset_version=17,
+        dynamic_axes={"images": {0: "batch"}, "tensors": {0: "batch"}}
+    )
+
+    torch.onnx.export(
+        detector_head,
+        (tensors, image_sizes, orig_sizes_tensor, *feats),
+        "./outputs/detector_head.onnx",
+        input_names=["tensors", "image_sizes", "orig_sizes"] + [f"feat{i}" for i in range(len(feats))],
+        output_names=["detections"],
+        opset_version=17,
+        dynamic_axes={"tensors": {0: "batch"}}
+    )
 
     #outputs1 = frcnn.backbone_cnn_layers_outputs(model_quantized, first_image)
     #outputs2 = frcnn.backbone_cnn_layers_outputs(model, first_image)

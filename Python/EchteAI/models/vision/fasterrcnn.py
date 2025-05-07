@@ -623,42 +623,45 @@ class FeatureExtractor(nn.Module):
     def __init__(self, transform, backbone):
         super().__init__()
         self.transform = transform
-        self.backbone = backbone
+        self.backbone  = backbone
 
     def forward(self, images):
+        original_image_sizes = [(img.shape[-2], img.shape[-1]) for img in images]
+
         img_list, _ = self.transform(images)
         features = self.backbone(img_list.tensors)
 
         if isinstance(features, torch.Tensor):
-            features = OrderedDict([("0", features)])
+            features = [features]
         elif isinstance(features, (list, tuple)):
-            features = OrderedDict((str(i), f) for i, f in enumerate(features))
-        elif isinstance(features, dict):
-            features = OrderedDict(features)
+            features = list(features)
         else:
-            raise TypeError(f"Unsupported feature type: {type(features)}")
+            features = list(features.values())
 
-        return img_list, features
+        return img_list.tensors, img_list.image_sizes, original_image_sizes, *features
 
 class DetectorHead(nn.Module):
     def __init__(self, rpn, roi_heads, postprocess):
         super().__init__()
-        self.rpn = rpn
-        self.roi_heads = roi_heads
+        self.rpn         = rpn
+        self.roi_heads   = roi_heads
         self.postprocess = postprocess
 
-    def forward(self, img_list, features, orig_sizes):
-        proposals, _ = self.rpn(img_list, features, targets=None)
-        detections, _ = self.roi_heads(features, proposals, img_list.image_sizes, targets=None)
-        detections = self.postprocess(detections, img_list.image_sizes, orig_sizes)
-        return detections
+    def forward(self, tensors, image_sizes, original_image_sizes, *features):
+        feats_dict = {str(i): f for i, f in enumerate(features)}
+
+        img_list = ImageList(tensors, image_sizes)
+
+        proposals, _  = self.rpn(img_list, feats_dict, targets=None)
+        detections, _ = self.roi_heads(feats_dict, proposals, image_sizes, targets=None)
+
+        return self.postprocess(detections, image_sizes, original_image_sizes)
 
 def split_frcnn_pipeline(model, images, device):
     logging.info("=== Comparison: full forward vs. manual pipeline (batch) ===")
     model.eval()
     images = [img.to(device) for img in images]
 
-    # Split model into two
     feature_extractor = FeatureExtractor(model.transform, model.backbone).to(device)
     detector_head = DetectorHead(model.rpn, model.roi_heads, model.transform.postprocess).to(device)
 
@@ -668,25 +671,27 @@ def split_frcnn_pipeline(model, images, device):
         t1 = time.time()
 
         t2 = time.time()
-        img_list, feats = feature_extractor(images)
-        orig_sizes = [(img.shape[-2], img.shape[-1]) for img in images]
-        detections = detector_head(img_list, feats, orig_sizes)
+        tensors, image_sizes, orig_sizes, *feats = feature_extractor(images)
+        manual_output = detector_head(tensors, image_sizes, orig_sizes, *feats)
         t3 = time.time()
 
-    logging.info(f"⏱️ Full forward time:  {(t1 - t0):.4f} s")
-    logging.info(f"⏱️ Manual pipeline time: {(t3 - t2):.4f} s")
+    logging.info(f"⏱️ Full forward time:     {(t1 - t0):.4f} s")
+    logging.info(f"⏱️ Manual pipeline time:  {(t3 - t2):.4f} s")
 
-    for i, (full, manual) in enumerate(zip(full_output, detections)):
+    for i, (full, manual) in enumerate(zip(full_output, manual_output)):
         logging.info(f"\n📷 Image {i}:")
         logging.info(f"📦 Box count - Full: {len(full['boxes'])}, Manual: {len(manual['boxes'])}")
-        if len(full['boxes']) and len(manual['boxes']):
+
+        if len(full['boxes']) and len(manual['boxes']) and len(full['boxes']) == len(manual['boxes']):
             box_diff = torch.abs(full['boxes'] - manual['boxes']).mean().item()
             score_diff = torch.abs(full['scores'] - manual['scores']).mean().item()
             label_diff = int((full['labels'] != manual['labels']).sum().item())
+
             logging.info(f"🔢 Avg. box difference:   {box_diff:.6f}")
             logging.info(f"🔢 Avg. score difference: {score_diff:.6f}")
             logging.info(f"❗ Label mismatches:      {label_diff}")
         else:
-            logging.warning("No detected boxes in either result.")
+            logging.warning("⚠️ Box count mismatch or empty detections.")
+            logging.warning(f"  Full boxes: {len(full['boxes'])}, Manual boxes: {len(manual['boxes'])}")
 
     return feature_extractor, detector_head
