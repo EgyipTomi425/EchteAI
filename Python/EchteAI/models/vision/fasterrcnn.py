@@ -619,15 +619,15 @@ def compare_direct_vs_manual_pipeline(model, images, device):
         else:
             logging.warning("No detected boxes in either result.")
 
+
 class FeatureExtractor(nn.Module):
     def __init__(self, transform, backbone):
         super().__init__()
         self.transform = transform
-        self.backbone  = backbone
+        self.backbone = backbone
 
     def forward(self, images):
         original_image_sizes = [(img.shape[-2], img.shape[-1]) for img in images]
-
         img_list, _ = self.transform(images)
         features = self.backbone(img_list.tensors)
 
@@ -640,22 +640,31 @@ class FeatureExtractor(nn.Module):
 
         return img_list.tensors, img_list.image_sizes, original_image_sizes, *features
 
+
 class DetectorHead(nn.Module):
+    class InternalHead(nn.Module):
+        def __init__(self, rpn, roi_heads, postprocess):
+            super().__init__()
+            self.rpn = rpn
+            self.roi_heads = roi_heads
+            self.postprocess = postprocess
+
+        def forward(self, tensors, image_sizes, original_image_sizes, *features):
+            feats_dict = {str(i): f for i, f in enumerate(features)}
+            img_list = ImageList(tensors, image_sizes)
+
+            proposals, _ = self.rpn(img_list, feats_dict, targets=None)
+            detections, _ = self.roi_heads(feats_dict, proposals, image_sizes, targets=None)
+
+            return self.postprocess(detections, image_sizes, original_image_sizes)
+
     def __init__(self, rpn, roi_heads, postprocess):
         super().__init__()
-        self.rpn         = rpn
-        self.roi_heads   = roi_heads
-        self.postprocess = postprocess
+        self.internal_head = self.InternalHead(rpn, roi_heads, postprocess)
 
     def forward(self, tensors, image_sizes, original_image_sizes, *features):
-        feats_dict = {str(i): f for i, f in enumerate(features)}
+        return self.internal_head(tensors, image_sizes, original_image_sizes, *features)
 
-        img_list = ImageList(tensors, image_sizes)
-
-        proposals, _  = self.rpn(img_list, feats_dict, targets=None)
-        detections, _ = self.roi_heads(feats_dict, proposals, image_sizes, targets=None)
-
-        return self.postprocess(detections, image_sizes, original_image_sizes)
 
 def split_frcnn_pipeline(model, images, device):
     logging.info("=== Comparison: full forward vs. manual pipeline (batch) ===")
@@ -695,3 +704,27 @@ def split_frcnn_pipeline(model, images, device):
             logging.warning(f"  Full boxes: {len(full['boxes'])}, Manual boxes: {len(manual['boxes'])}")
 
     return feature_extractor, detector_head
+
+
+def split_save_frcnn(model, images, device):
+    feature_extractor, detector_head = split_frcnn_pipeline(model, images, device)
+
+    tensors, image_sizes_tensor, orig_sizes_tensor, *features_tensor_list = feature_extractor(images)
+
+    torch.onnx.export(
+        feature_extractor,
+        (images,),
+        "feature_extractor.onnx",
+        input_names=["images"],
+        output_names=["tensors", "image_sizes", "orig_sizes"] + [f"feat{i}" for i in range(len(features_tensor_list))],
+        opset_version=11
+    )
+
+    torch.onnx.export(
+        detector_head,
+        (tensors, image_sizes_tensor, orig_sizes_tensor, *features_tensor_list),
+        "detector_head.onnx",
+        input_names=["tensors", "image_sizes", "orig_sizes"] + [f"feat{i}" for i in range(len(features_tensor_list))],
+        output_names=["boxes", "labels", "scores"],
+        opset_version=11
+    )
