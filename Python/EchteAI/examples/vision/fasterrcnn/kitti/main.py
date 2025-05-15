@@ -68,6 +68,19 @@ def main():
     dl.save_image(first_image)
 
     frcnn.split_save_frcnn(model, images[:2], device)
+    model_onnx_fp32 = frcnn.ONNXFasterRCNNWrapper("feature_extractor.onnx", "detector_head.onnx", "cpu")
+    val_out_onnx_fp32 = os.path.join("outputs", "onnx", "fp32")
+    frcnn.run_predictions_fasterrcnn(model_onnx_fp32, val_loader, device, val_dataset.dataset if hasattr(val_dataset, "dataset") else val_dataset, val_out_onnx_fp32, evaluate=False, num_batches=3, batch_size=2)
+
+    frcnn.quantize_onnx_static(
+        onnx_model_path="feature_extractor.onnx",
+        data_loader=train_loader,
+        input_shape=(2, 3, 375, 1242),
+        num_batches=8
+    )
+    model_onnx_int8 = frcnn.ONNXFasterRCNNWrapper("feature_extractor_int8.onnx", "detector_head.onnx", "cpu")
+    val_out_onnx_int8 = os.path.join("outputs", "onnx", "int8")
+    frcnn.run_predictions_fasterrcnn(model_onnx_int8, val_loader, device, val_dataset.dataset if hasattr(val_dataset, "dataset") else val_dataset, val_out_onnx_int8, evaluate=False, num_batches=3, batch_size=2)
 
     #outputs1 = frcnn.backbone_cnn_layers_outputs(model_quantized, first_image)
     #outputs2 = frcnn.backbone_cnn_layers_outputs(model, first_image)

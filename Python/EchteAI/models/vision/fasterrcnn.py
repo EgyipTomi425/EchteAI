@@ -14,6 +14,10 @@ import matplotlib.pyplot as plt
 from torchvision.models.detection.image_list import ImageList
 from collections import OrderedDict
 import onnxruntime as ort
+import torchvision.transforms as T
+import torch.nn.functional as F
+from onnxruntime.quantization import quantize_static, CalibrationDataReader, QuantType
+import onnx
 
 def setup_fasterrcnn(dataset=None, backbone="resnet50"):
     model_choices = {
@@ -177,10 +181,24 @@ def train_fasterrcnn(model, train_loader, val_loader, device, num_epochs, model_
         torch.save(model.state_dict(), model_path)
     return model
 
-def run_predictions_fasterrcnn(model, data_loader, device, dataset, output_folder, evaluate=False, num_batches = -1):
+def run_predictions_fasterrcnn(model, data_loader, device, dataset, output_folder, evaluate=False, num_batches = -1, batch_size=None):
     os.makedirs(output_folder, exist_ok=True)
     model.to(device)
     model.eval()
+    if batch_size is not None:
+        idx_to_class = dataset.idx_to_class
+        class_to_idx = dataset.class_to_idx
+        logging.info(f"Rebuilding data_loader with batch_size={batch_size}")
+        dataset = data_loader.dataset
+        data_loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            collate_fn=getattr(data_loader, 'collate_fn', None)
+        )
+        dataset.idx_to_class = idx_to_class
+        dataset.class_to_idx = class_to_idx
+
     if evaluate:
         metrics = compute_metrics_fasterrcnn(data_loader, model, device)
         logging.info(f"Metrics on dataset: Acc: {metrics['accuracy']:.4f}, Prec: {metrics['precision']:.4f}, mIoU: {metrics['mean_iou']:.4f}")
@@ -620,14 +638,6 @@ def compare_direct_vs_manual_pipeline(model, images, device):
         else:
             logging.warning("No detected boxes in either result.")
 
-import logging
-import time
-import numpy as np
-import torch
-import torch.nn as nn
-import torch.onnx
-import onnxruntime as ort
-from torchvision.models.detection.image_list import ImageList
 
 class FeatureExtractor(nn.Module):
     def __init__(self, transform, backbone):
@@ -701,48 +711,148 @@ def split_save_frcnn(model, images, device):
     logging.info("🔧 Preparing model and inputs")
     fe, dh = split_frcnn_pipeline(model, images, device)
     fe.eval(); dh.eval()
+
     torch.onnx.export(
         fe,
         (images,),
         "feature_extractor.onnx",
         input_names=["images"],
-        output_names=["tensors","image_sizes","orig_sizes","feat0","feat1","feat2","feat3","feat4"],
+        output_names=["tensors", "image_sizes", "orig_sizes", "feat0", "feat1", "feat2", "feat3", "feat4"],
+        opset_version=16
     )
-    
+
     tensors, image_sizes, orig_sizes, f0, f1, f2, f3, f4 = fe(images)
+
     torch.onnx.export(
         dh,
         (tensors, image_sizes, orig_sizes, f0, f1, f2, f3, f4),
         "detector_head.onnx",
-        input_names=["tensors","image_sizes","orig_sizes","feat0","feat1","feat2","feat3","feat4"],
-        output_names=["boxes","labels","scores"],
-        dynamic_axes={"feat3":{0:"batch",2:"h",3:"w"}},
+        input_names=["tensors", "image_sizes", "orig_sizes", "feat0", "feat1", "feat2", "feat3", "feat4"],
+        output_names=["boxes", "labels", "scores"],
+        dynamic_axes={"feat3": {0: "batch", 2: "h", 3: "w"}},
+        opset_version=16
     )
 
     logging.info("▶️ Running ONNX models")
     fe_sess = ort.InferenceSession("feature_extractor.onnx")
     dh_sess = ort.InferenceSession("detector_head.onnx")
+
+    logging.info("🧠 FeatureExtractor (fe) model:")
     for inp in fe_sess.get_inputs():
-        logging.info(f"FE input: {inp.name} {inp.shape}")
+        logging.info(f"🟩 FE input:  {inp.name:15} shape={inp.shape}")
+    for out in fe_sess.get_outputs():
+        logging.info(f"🟦 FE output: {out.name:15} shape={out.shape}")
+
+    logging.info("🧠 DetectorHead (dh) model:")
     for inp in dh_sess.get_inputs():
-        logging.info(f"DH input: {inp.name} {inp.shape}")
+        logging.info(f"🟩 DH input:  {inp.name:15} shape={inp.shape}")
+    for out in dh_sess.get_outputs():
+        logging.info(f"🟦 DH output: {out.name:15} shape={out.shape}")
+
     img_batch = np.stack([img.cpu().numpy() for img in images], axis=0)
     fe_outs = fe_sess.run(None, {"images": img_batch})
     fe_out_dict = {out.name: fe_outs[i] for i, out in enumerate(fe_sess.get_outputs())}
+
     dh_inputs = {}
     for inp in dh_sess.get_inputs():
         arr = fe_out_dict[inp.name]
-        if inp.name in ("image_sizes","orig_sizes"):
-            arr = arr.reshape(-1,2).astype(np.int64)
+        if inp.name in ("image_sizes", "orig_sizes"):
+            arr = arr.reshape(-1, 2).astype(np.int64)
         dh_inputs[inp.name] = arr
+
     dh_outs = dh_sess.run(None, dh_inputs)
-    total = len(dh_outs)
     bs = len(images)
-    boxes = dh_outs[0:bs]
+    boxes  = dh_outs[0:bs]
     labels = dh_outs[bs:2*bs]
     scores = dh_outs[2*bs:3*bs]
+
     logging.info("🖼️ Detection results per image:")
     for i in range(bs):
         logging.info(f"📷 Image {i}: boxes={boxes[i].shape[0]} labels={labels[i].tolist()}")
+
     for out, meta in zip(dh_outs, dh_sess.get_outputs()):
         logging.info(f"📤 {meta.name}: {np.array(out).shape}")
+
+class ONNXFasterRCNNWrapper(torch.nn.Module):
+    def __init__(self, fe_onnx_path="feature_extractor.onnx", dh_onnx_path="detector_head.onnx", device='cpu'):
+        super().__init__()
+        self.device = device
+        self.fe_session = ort.InferenceSession(fe_onnx_path, providers=['CPUExecutionProvider'])
+        self.dh_session = ort.InferenceSession(dh_onnx_path, providers=['CPUExecutionProvider'])
+
+    def forward(self, images):
+        resized = [F.interpolate(img.unsqueeze(0), size=(375, 1242), mode="bilinear", align_corners=False).squeeze(0) for img in images]
+        batch = torch.stack(resized).to(self.device)
+
+        fe_outputs = self.fe_session.run(None, {"images": batch.cpu().numpy()})
+        output_names = [o.name for o in self.fe_session.get_outputs()]
+        fe_dict = dict(zip(output_names, fe_outputs))
+
+        for k in ("image_sizes", "orig_sizes"):
+            fe_dict[k] = fe_dict[k].reshape(-1, 2).astype(np.int64)
+
+        dh_inputs = {inp.name: fe_dict[inp.name] for inp in self.dh_session.get_inputs()}
+        dh_outputs = self.dh_session.run(None, dh_inputs)
+
+        bs = len(images)
+        boxes  = dh_outputs[0:bs]
+        labels = dh_outputs[bs:2*bs]
+        scores = dh_outputs[2*bs:3*bs]
+
+        results = []
+        for i in range(bs):
+            result = {
+                "boxes": torch.tensor(boxes[i], device=self.device),
+                "labels": torch.tensor(labels[i], device=self.device),
+                "scores": torch.tensor(scores[i], device=self.device),
+            }
+            results.append(result)
+        return results
+
+class FeatureExtractorCalibrationDataReader(CalibrationDataReader):
+    def __init__(self, data_loader, input_name, input_shape, num_batches):
+        self.input_name = input_name
+        self.input_shape = input_shape
+        self.inputs = []
+
+        bs, c, h, w = input_shape
+        count = 0
+        for images, _ in data_loader:
+            if count >= num_batches:
+                break
+            if len(images) < bs:
+                continue 
+            batch = torch.stack([
+                F.interpolate(img.unsqueeze(0), size=(h, w), mode="bilinear", align_corners=False).squeeze(0)
+                for img in images[:bs]
+            ])
+            self.inputs.append({input_name: batch.numpy()})
+            count += 1
+
+        self.input_iter = iter(self.inputs)
+
+    def get_next(self):
+        return next(self.input_iter, None)
+
+def quantize_onnx_static(onnx_model_path, data_loader, input_shape=(2, 3, 375, 1242), num_batches=8):
+    model = onnx.load(onnx_model_path)
+    input_name = model.graph.input[0].name
+    base, ext = os.path.splitext(onnx_model_path)
+    quantized_model_path = base + "_int8" + ext
+    dr = FeatureExtractorCalibrationDataReader(data_loader, input_name, input_shape, num_batches)
+    quantize_static(
+        model_input=onnx_model_path,
+        model_output=quantized_model_path,
+        calibration_data_reader=dr,
+        quant_format="QDQ",
+        weight_type=QuantType.QInt8,
+        activation_type=QuantType.QInt8,
+    )
+    logging.info(f"Quantized modell saved succesfully: {quantized_model_path}")
+
+
+
+
+
+
+
