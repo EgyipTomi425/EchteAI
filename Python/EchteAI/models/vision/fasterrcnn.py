@@ -13,6 +13,7 @@ import time
 import matplotlib.pyplot as plt
 from torchvision.models.detection.image_list import ImageList
 from collections import OrderedDict
+import onnxruntime as ort
 
 def setup_fasterrcnn(dataset=None, backbone="resnet50"):
     model_choices = {
@@ -619,6 +620,14 @@ def compare_direct_vs_manual_pipeline(model, images, device):
         else:
             logging.warning("No detected boxes in either result.")
 
+import logging
+import time
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.onnx
+import onnxruntime as ort
+from torchvision.models.detection.image_list import ImageList
 
 class FeatureExtractor(nn.Module):
     def __init__(self, transform, backbone):
@@ -627,104 +636,113 @@ class FeatureExtractor(nn.Module):
         self.backbone = backbone
 
     def forward(self, images):
-        original_image_sizes = [(img.shape[-2], img.shape[-1]) for img in images]
+        original_image_sizes = torch.tensor([list(img.shape[-2:]) for img in images], dtype=torch.int64)
         img_list, _ = self.transform(images)
         features = self.backbone(img_list.tensors)
-
-        if isinstance(features, torch.Tensor):
-            features = [features]
-        elif isinstance(features, (list, tuple)):
-            features = list(features)
-        else:
-            features = list(features.values())
-
-        return img_list.tensors, img_list.image_sizes, original_image_sizes, *features
-
+        feats = list(features.values())
+        image_sizes = torch.tensor([list(s) for s in img_list.image_sizes], dtype=torch.int64)
+        return (
+            img_list.tensors,
+            image_sizes,
+            original_image_sizes,
+            feats[0], feats[1], feats[2], feats[3], feats[4],
+        )
 
 class DetectorHead(nn.Module):
-    class InternalHead(nn.Module):
-        def __init__(self, rpn, roi_heads, postprocess):
-            super().__init__()
-            self.rpn = rpn
-            self.roi_heads = roi_heads
-            self.postprocess = postprocess
-
-        def forward(self, tensors, image_sizes, original_image_sizes, *features):
-            feats_dict = {str(i): f for i, f in enumerate(features)}
-            img_list = ImageList(tensors, image_sizes)
-
-            proposals, _ = self.rpn(img_list, feats_dict, targets=None)
-            detections, _ = self.roi_heads(feats_dict, proposals, image_sizes, targets=None)
-
-            return self.postprocess(detections, image_sizes, original_image_sizes)
-
     def __init__(self, rpn, roi_heads, postprocess):
         super().__init__()
-        self.internal_head = self.InternalHead(rpn, roi_heads, postprocess)
+        self.rpn = rpn
+        self.roi_heads = roi_heads
+        self.postprocess = postprocess
 
-    def forward(self, tensors, image_sizes, original_image_sizes, *features):
-        return self.internal_head(tensors, image_sizes, original_image_sizes, *features)
-
+    def forward(self, tensors, image_sizes, original_image_sizes, feat0, feat1, feat2, feat3, feat4):
+        feats = {"0": feat0, "1": feat1, "2": feat2, "3": feat3, "4": feat4}
+        img_list = ImageList(tensors, image_sizes)
+        proposals, _ = self.rpn(img_list, feats, targets=None)
+        detections, _ = self.roi_heads(feats, proposals, image_sizes, targets=None)
+        results = self.postprocess(detections, image_sizes, original_image_sizes)
+        boxes = [r["boxes"] for r in results]
+        labels = [r["labels"] for r in results]
+        scores = [r["scores"] for r in results]
+        return boxes, labels, scores
 
 def split_frcnn_pipeline(model, images, device):
     logging.info("=== Comparison: full forward vs. manual pipeline (batch) ===")
     model.eval()
     images = [img.to(device) for img in images]
-
-    feature_extractor = FeatureExtractor(model.transform, model.backbone).to(device)
-    detector_head = DetectorHead(model.rpn, model.roi_heads, model.transform.postprocess).to(device)
-
+    fe = FeatureExtractor(model.transform, model.backbone).to(device)
+    dh = DetectorHead(model.rpn, model.roi_heads, model.transform.postprocess).to(device)
     with torch.no_grad():
         t0 = time.time()
         full_output = model(images)
         t1 = time.time()
-
         t2 = time.time()
-        tensors, image_sizes, orig_sizes, *feats = feature_extractor(images)
-        manual_output = detector_head(tensors, image_sizes, orig_sizes, *feats)
+        tensors, image_sizes, orig_sizes, f0, f1, f2, f3, f4 = fe(images)
+        manual_boxes, manual_labels, manual_scores = dh(tensors, image_sizes, orig_sizes, f0, f1, f2, f3, f4)
         t3 = time.time()
-
     logging.info(f"⏱️ Full forward time:     {(t1 - t0):.4f} s")
     logging.info(f"⏱️ Manual pipeline time:  {(t3 - t2):.4f} s")
-
-    for i, (full, manual) in enumerate(zip(full_output, manual_output)):
+    for i, full in enumerate(full_output):
         logging.info(f"\n📷 Image {i}:")
-        logging.info(f"📦 Box count - Full: {len(full['boxes'])}, Manual: {len(manual['boxes'])}")
-
-        if len(full['boxes']) and len(manual['boxes']) and len(full['boxes']) == len(manual['boxes']):
-            box_diff = torch.abs(full['boxes'] - manual['boxes']).mean().item()
-            score_diff = torch.abs(full['scores'] - manual['scores']).mean().item()
-            label_diff = int((full['labels'] != manual['labels']).sum().item())
-
+        logging.info(f"📦 Box count - Full: {len(full['boxes'])}, Manual: {len(manual_boxes[i])}")
+        if len(full['boxes']) == len(manual_boxes[i]) and len(full['boxes']) > 0:
+            box_diff = torch.abs(full['boxes'] - manual_boxes[i]).mean().item()
+            score_diff = torch.abs(full['scores'] - manual_scores[i]).mean().item()
+            label_diff = int((full['labels'] != manual_labels[i]).sum().item())
             logging.info(f"🔢 Avg. box difference:   {box_diff:.6f}")
             logging.info(f"🔢 Avg. score difference: {score_diff:.6f}")
             logging.info(f"❗ Label mismatches:      {label_diff}")
         else:
             logging.warning("⚠️ Box count mismatch or empty detections.")
-            logging.warning(f"  Full boxes: {len(full['boxes'])}, Manual boxes: {len(manual['boxes'])}")
-
-    return feature_extractor, detector_head
-
+            logging.warning(f"  Full boxes: {len(full['boxes'])}, Manual boxes: {len(manual_boxes[i])}")
+    return fe, dh
 
 def split_save_frcnn(model, images, device):
-    feature_extractor, detector_head = split_frcnn_pipeline(model, images, device)
-
-    tensors, image_sizes_tensor, orig_sizes_tensor, *features_tensor_list = feature_extractor(images)
-
+    logging.info("🔧 Preparing model and inputs")
+    fe, dh = split_frcnn_pipeline(model, images, device)
+    fe.eval(); dh.eval()
     torch.onnx.export(
-        feature_extractor,
+        fe,
         (images,),
         "feature_extractor.onnx",
         input_names=["images"],
-        output_names=["tensors", "image_sizes", "orig_sizes"] + [f"feat{i}" for i in range(len(features_tensor_list))],
-        opset_version=11
+        output_names=["tensors","image_sizes","orig_sizes","feat0","feat1","feat2","feat3","feat4"],
+    )
+    
+    tensors, image_sizes, orig_sizes, f0, f1, f2, f3, f4 = fe(images)
+    torch.onnx.export(
+        dh,
+        (tensors, image_sizes, orig_sizes, f0, f1, f2, f3, f4),
+        "detector_head.onnx",
+        input_names=["tensors","image_sizes","orig_sizes","feat0","feat1","feat2","feat3","feat4"],
+        output_names=["boxes","labels","scores"],
+        dynamic_axes={"feat3":{0:"batch",2:"h",3:"w"}},
     )
 
-    torch.onnx.export(
-        detector_head,
-        (tensors, image_sizes_tensor, orig_sizes_tensor, *features_tensor_list),
-        "detector_head.onnx",
-        input_names=["tensors", "image_sizes", "orig_sizes"] + [f"feat{i}" for i in range(len(features_tensor_list))],
-        output_names=["boxes", "labels", "scores"],
-        opset_version=11
-    )
+    logging.info("▶️ Running ONNX models")
+    fe_sess = ort.InferenceSession("feature_extractor.onnx")
+    dh_sess = ort.InferenceSession("detector_head.onnx")
+    for inp in fe_sess.get_inputs():
+        logging.info(f"FE input: {inp.name} {inp.shape}")
+    for inp in dh_sess.get_inputs():
+        logging.info(f"DH input: {inp.name} {inp.shape}")
+    img_batch = np.stack([img.cpu().numpy() for img in images], axis=0)
+    fe_outs = fe_sess.run(None, {"images": img_batch})
+    fe_out_dict = {out.name: fe_outs[i] for i, out in enumerate(fe_sess.get_outputs())}
+    dh_inputs = {}
+    for inp in dh_sess.get_inputs():
+        arr = fe_out_dict[inp.name]
+        if inp.name in ("image_sizes","orig_sizes"):
+            arr = arr.reshape(-1,2).astype(np.int64)
+        dh_inputs[inp.name] = arr
+    dh_outs = dh_sess.run(None, dh_inputs)
+    total = len(dh_outs)
+    bs = len(images)
+    boxes = dh_outs[0:bs]
+    labels = dh_outs[bs:2*bs]
+    scores = dh_outs[2*bs:3*bs]
+    logging.info("🖼️ Detection results per image:")
+    for i in range(bs):
+        logging.info(f"📷 Image {i}: boxes={boxes[i].shape[0]} labels={labels[i].tolist()}")
+    for out, meta in zip(dh_outs, dh_sess.get_outputs()):
+        logging.info(f"📤 {meta.name}: {np.array(out).shape}")

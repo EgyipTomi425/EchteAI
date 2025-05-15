@@ -17,15 +17,8 @@ file_handler.setLevel(logging.DEBUG)
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 file_handler.flush = lambda: None  # Kikapcsolja a pufferelést
 
-# Konzolos loggolás
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.DEBUG)
-
-logging.basicConfig(level=logging.DEBUG, handlers=[file_handler, console_handler])
-
 logger = logging.getLogger()
 logger.addHandler(file_handler)
-logger.addHandler(console_handler)
 
 def main():
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -74,8 +67,7 @@ def main():
     first_image = first_batch[0][13].to(device)
     dl.save_image(first_image)
 
-    feature_extractor, detector_head = frcnn.split_frcnn_pipeline(model, images[:15], device)
-    frcnn.split_save_frcnn(model, images[:15], device)
+    frcnn.split_save_frcnn(model, images[:2], device)
 
     #outputs1 = frcnn.backbone_cnn_layers_outputs(model_quantized, first_image)
     #outputs2 = frcnn.backbone_cnn_layers_outputs(model, first_image)
