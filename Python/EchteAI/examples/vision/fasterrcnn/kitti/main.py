@@ -7,6 +7,10 @@ import torch
 import os
 import onnx
 import torch.nn.functional as F
+from torch.fx import symbolic_trace
+from torch.fx import symbolic_trace
+from torch.quantization import QConfig, MinMaxObserver
+from torch.quantization.quantize_fx import prepare_fx, convert_fx
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -35,6 +39,34 @@ def main():
     model.to(device)
     model = frcnn.train_fasterrcnn(model, train_loader, val_loader, device, num_epochs)
     model.eval()
+
+    
+    # traced = symbolic_trace(model.backbone)
+
+    # qconfig = QConfig(
+    #     activation=MinMaxObserver.with_args(dtype=torch.quint8, qscheme=torch.per_tensor_affine),
+    #     weight=MinMaxObserver.with_args(dtype=torch.qint8, qscheme=torch.per_tensor_symmetric)
+    # )
+    # qconfig_dict = {"": qconfig}
+
+    # images, _ = next(iter(val_loader))
+    # images = torch.stack([
+    #     F.interpolate(img.unsqueeze(0), size=(375, 1242), mode="bilinear", align_corners=False).squeeze(0)
+    #     for img in images
+    # ], dim=0).to(device)
+    # images = images[:32]
+
+    # prepared = prepare_fx(traced, qconfig_dict, example_inputs=(images,))
+
+    # prepared(images)
+
+    # quantized = convert_fx(prepared)
+
+    # torch.save(quantized.state_dict(), "quantized_backbone.pth")
+
+    # model.backbone = quantized
+
+
 
     device = "cpu"
     val_out = os.path.join("outputs", "predictions", "validation")
@@ -67,10 +99,11 @@ def main():
     first_image = first_batch[0][13].to(device)
     dl.save_image(first_image)
 
+
     frcnn.split_save_frcnn(model, images[:2], device)
     model_onnx_fp32 = frcnn.ONNXFasterRCNNWrapper("feature_extractor.onnx", "detector_head.onnx", "cpu")
     val_out_onnx_fp32 = os.path.join("outputs", "onnx", "fp32")
-    frcnn.run_predictions_fasterrcnn(model_onnx_fp32, val_loader, device, val_dataset.dataset if hasattr(val_dataset, "dataset") else val_dataset, val_out_onnx_fp32, evaluate=False, num_batches=3, batch_size=2)
+    #frcnn.run_predictions_fasterrcnn(model_onnx_fp32, val_loader, device, val_dataset.dataset if hasattr(val_dataset, "dataset") else val_dataset, val_out_onnx_fp32, evaluate=False, num_batches=3, batch_size=2)
 
     frcnn.quantize_onnx_static(
         onnx_model_path="feature_extractor.onnx",
