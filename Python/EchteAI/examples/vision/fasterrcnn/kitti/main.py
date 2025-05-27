@@ -12,10 +12,13 @@ from torch.fx import symbolic_trace
 from torch.quantization import QConfig, MinMaxObserver
 from torch.quantization.quantize_fx import prepare_fx, convert_fx
 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+from ultralytics import YOLO
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
 file_handler = logging.FileHandler('output.log', mode='a', encoding='utf-8')
-file_handler.setLevel(logging.DEBUG)
+file_handler.setLevel(logging.INFO)
 
 # Azonnali flush minden logolás után
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
@@ -23,6 +26,10 @@ file_handler.flush = lambda: None  # Kikapcsolja a pufferelést
 
 logger = logging.getLogger()
 logger.addHandler(file_handler)
+
+
+import PIL
+logging.getLogger("PIL").setLevel(logging.INFO)
 
 def main():
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -39,6 +46,22 @@ def main():
     model.to(device)
     model = frcnn.train_fasterrcnn(model, train_loader, val_loader, device, num_epochs)
     model.eval()
+
+
+    #dl.convert_kitti_to_yolo_structure() ## Első futtattáskor ne legyen kikommentezve
+    model_yolo = frcnn.setup_yolo()
+    print(model_yolo)
+    #model_yolo = frcnn.train_yolo(model_yolo, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device, epochs=5)
+    #metrics = frcnn.compute_metrics_yolo(model_yolo, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device)
+    #logging.info(f"YOLOv11 validation metrics: {metrics}")
+    #frcnn.run_predictions_yolo(model_yolo, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo", num_images=45)
+
+    model_yolo.export(format="onnx", batch=2)
+
+    frcnn.predict_yolo_onnx_tensor()
+
+
+    return 0
 
     
     # traced = symbolic_trace(model.backbone)
@@ -113,7 +136,7 @@ def main():
     )
     model_onnx_int8 = frcnn.ONNXFasterRCNNWrapper("feature_extractor_int8.onnx", "detector_head.onnx", "cpu")
     val_out_onnx_int8 = os.path.join("outputs", "onnx", "int8")
-    frcnn.run_predictions_fasterrcnn(model_onnx_int8, val_loader, device, val_dataset.dataset if hasattr(val_dataset, "dataset") else val_dataset, val_out_onnx_int8, evaluate=False, num_batches=3, batch_size=2)
+    #frcnn.run_predictions_fasterrcnn(model_onnx_int8, val_loader, device, val_dataset.dataset if hasattr(val_dataset, "dataset") else val_dataset, val_out_onnx_int8, evaluate=False, num_batches=3, batch_size=2)
 
     #outputs1 = frcnn.backbone_cnn_layers_outputs(model_quantized, first_image)
     #outputs2 = frcnn.backbone_cnn_layers_outputs(model, first_image)
@@ -126,6 +149,15 @@ def main():
     #frcnn.visualize_cnn_outputs(outputs_percentage_diffs, filename="activation_difference_heatmap_percentage_layer1")
     #frcnn.fit_and_plot_distribution(outputs1, outputs_diffs, layer=1)
     #frcnn.fit_and_plot_distribution(outputs1, outputs_percentage_diffs, layer=1, filename="distribution_fit_percentage")
+
+
+    tensor = images[:2]
+    outputs_fp32 = frcnn.onnx_conv_outputs_from_batch("feature_extractor.onnx", tensor, pattern=r".*conv.*")
+    outputs_int8 = frcnn.onnx_conv_outputs_from_batch("feature_extractor_int8.onnx", tensor, pattern=r".*conv.*")
+    onnx_abs_diffs = frcnn.absolute_differences(outputs_fp32, outputs_int8)
+    frcnn.fit_and_plot_distribution(outputs_fp32, onnx_abs_diffs, filename="distribution_onnx_fit_abs")
+    print("a")
+
 
 if __name__ == "__main__":
     main()

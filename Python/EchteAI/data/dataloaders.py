@@ -37,7 +37,7 @@ def get_dataloaders(dataset_class, root, transform=T.Compose([T.ToTensor()]), ba
         val_dataset, batch_size=batch_size, shuffle=False, collate_fn=lambda batch: tuple(zip(*batch))
     )
 
-    logging.debug(f"Train and validation loaders are ready. They contain {train_size} and {val_size} images.")
+    logging.info(f"Train and validation loaders are ready. They contain {train_size} and {val_size} images.")
 
     test_dataset = dataset_class(root=root, split="testing", transforms=transform, **dataset_args)
     test_loader = DataLoader(
@@ -47,7 +47,7 @@ def get_dataloaders(dataset_class, root, transform=T.Compose([T.ToTensor()]), ba
     test_dataset.class_to_idx = full_train_dataset.class_to_idx
     test_dataset.idx_to_class = full_train_dataset.idx_to_class
 
-    logging.debug(f"Test loader is ready. It contains {len(test_dataset)} images.")
+    logging.info(f"Test loader is ready. It contains {len(test_dataset)} images.")
 
     return train_dataset, train_loader, val_dataset, val_loader, test_dataset, test_loader, full_train_dataset.class_to_idx, full_train_dataset.idx_to_class
 
@@ -154,7 +154,7 @@ def get_class_mapping(labels_dir=None, predefined_classes=None):
     class_to_idx = {cls: idx + 1 for idx, cls in enumerate(class_list)}
     idx_to_class = {idx + 1: cls for idx, cls in enumerate(class_list)}
     logging.info(f"Number of classes is {len(class_set)}.")
-    logging.debug(f"Class list: {class_list}")
+    logging.info(f"Class list: {class_list}")
 
     return class_to_idx, idx_to_class
 
@@ -199,3 +199,74 @@ class KittiDataset(Dataset):
         return img, target
     def __len__(self):
         return len(self.imgs)
+    
+
+
+import os
+import shutil
+import cv2
+from torch.utils.data import random_split
+
+def convert_kitti_to_yolo_structure(kitti_root=os.path.abspath(os.getcwd())+"/downloads", output_root="downloads/yolo_dataset", train_ratio=0.8, image_size=(1242, 375)):
+    image_dir = os.path.join(kitti_root, "training", "image_2")
+    label_dir = os.path.join(kitti_root, "training", "label_2")
+
+    images = sorted([f for f in os.listdir(image_dir) if f.endswith(".png")])
+    labels = sorted([f for f in os.listdir(label_dir) if f.endswith(".txt")])
+    
+    total = len(images)
+    train_count = int(train_ratio * total)
+    
+    train_imgs, val_imgs = images[:train_count], images[train_count:]
+
+    for split in ["train", "val"]:
+        os.makedirs(os.path.join(output_root, f"images/{split}"), exist_ok=True)
+        os.makedirs(os.path.join(output_root, f"labels/{split}"), exist_ok=True)
+
+    class_set = set()
+    for label_file in labels:
+        with open(os.path.join(label_dir, label_file), "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if parts:
+                    class_set.add(parts[0])
+    class_list = sorted(class_set)
+    class_to_idx = {cls: i for i, cls in enumerate(class_list)}
+
+    def convert_annotation(image_file, split):
+        label_file = image_file.replace(".png", ".txt")
+        src_label_path = os.path.join(label_dir, label_file)
+        dst_label_path = os.path.join(output_root, f"labels/{split}", label_file)
+        if not os.path.exists(src_label_path):
+            return
+        lines = []
+        with open(src_label_path, "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) >= 8:
+                    cls = class_to_idx[parts[0]]
+                    left, top, right, bottom = map(float, parts[4:8])
+                    x_center = ((left + right) / 2) / image_size[0]
+                    y_center = ((top + bottom) / 2) / image_size[1]
+                    width = (right - left) / image_size[0]
+                    height = (bottom - top) / image_size[1]
+                    lines.append(f"{cls} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}")
+        with open(dst_label_path, "w") as f:
+            f.write("\n".join(lines))
+
+    def process_split(img_list, split):
+        for img_file in img_list:
+            src_img_path = os.path.join(image_dir, img_file)
+            dst_img_path = os.path.join(output_root, f"images/{split}", img_file)
+            shutil.copyfile(src_img_path, dst_img_path)
+            convert_annotation(img_file, split)
+
+    process_split(train_imgs, "train")
+    process_split(val_imgs, "val")
+
+    with open(os.path.join(output_root, "kitti.yaml"), "w") as f:
+        f.write(f"train: {os.path.abspath(os.path.join(output_root, 'images/train'))}\n")
+        f.write(f"val: {os.path.abspath(os.path.join(output_root, 'images/val'))}\n")
+        f.write(f"batch: 15\n")
+        f.write(f"nc: {len(class_list)}\n")
+        f.write(f"names: {class_list}\n")

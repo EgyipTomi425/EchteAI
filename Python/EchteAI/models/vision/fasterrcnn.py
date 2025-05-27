@@ -19,6 +19,14 @@ import torch.nn.functional as F
 from onnxruntime.quantization import quantize_static, CalibrationDataReader, QuantType
 import onnx
 
+import re
+
+from ultralytics import YOLO
+from ultralytics.data.augment import LetterBox
+
+
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
+
 def setup_fasterrcnn(dataset=None, backbone="resnet50"):
     model_choices = {
         "resnet50": (fasterrcnn_resnet50_fpn, FasterRCNN_ResNet50_FPN_Weights.DEFAULT),
@@ -163,7 +171,7 @@ def train_fasterrcnn(model, train_loader, val_loader, device, num_epochs, model_
                     predictions = model(images)
                     batch_metrics = compute_batch_metrics_fasterrcnn(targets, predictions)
                     model.train()
-                logging.debug(
+                logging.info(
                     f"Epoch {epoch+1}, Batch {batch_idx+1}, Loss: {losses.item():.4f}, "
                     f"Acc: {batch_metrics['accuracy']:.4f}, Prec: {batch_metrics['precision']:.4f}, "
                     f"mIoU: {batch_metrics['mean_iou']:.4f}"
@@ -354,7 +362,7 @@ def visualize_cnn_outputs(outputs, output_folder="outputs", filename="activation
     output_items = list(outputs.items())
 
     largest_shape = max([feat.shape[-2:] for _, feat in output_items])
-    logging.debug(f"Largest shape is: {largest_shape}.")
+    logging.info(f"Largest shape is: {largest_shape}.")
 
     heatmap = np.zeros(largest_shape, dtype=np.float32)
     weight_sum = np.zeros(largest_shape, dtype=np.float32)
@@ -852,7 +860,78 @@ def quantize_onnx_static(onnx_model_path, data_loader, input_shape=(2, 3, 375, 1
 
 
 
+def onnx_conv_outputs_from_batch(model_path, input_tensor, pattern=r".*conv.*"):
+    model = onnx.load(model_path)
+    conv_outputs = []
+    for node in model.graph.node:
+        if node.op_type.lower() == "conv":
+            for output in node.output:
+                if re.search(pattern, output, re.IGNORECASE):
+                    conv_outputs.append(output)
+    existing_outputs = [o.name for o in model.graph.output]
+    value_infos = {vi.name: vi for vi in model.graph.value_info}
+    for name in conv_outputs:
+        if name not in existing_outputs and name in value_infos:
+            model.graph.output.append(value_infos[name])
+    export_path = model_path.replace(".onnx", "_with_outputs.onnx")
+    onnx.save(model, export_path)
+    session = ort.InferenceSession(export_path, providers=["CPUExecutionProvider"])
+    input_name = session.get_inputs()[0].name
+    ort_outputs = session.run(None, {input_name: input_tensor.cpu().numpy()})
+    output_names = [o.name for o in session.get_outputs()]
+    return {name: torch.tensor(val) for name, val in zip(output_names, ort_outputs)}
 
 
 
+def setup_yolo(model_name="yolo11n.pt", pretrained=True):
+    if os.path.exists("./self_"+model_name):
+        model = YOLO("./self_"+model_name)
+    else:
+        model = YOLO(model_name)
+        if not pretrained:
+            model = model.reset()
+    return model
 
+def train_yolo(model, data_yaml_path, device, epochs=10, model_name="yolo11n.pt"):
+    if os.path.exists("./self_"+model_name):
+        return model
+    model.train(data=data_yaml_path, epochs=epochs, device=device)
+    model.save("self_"+model_name)
+    return model
+
+def compute_metrics_yolo(model, data_yaml_path, device):
+    metrics = model.val(data=data_yaml_path, device=device)
+    return {
+        "precision": metrics.results_dict["metrics/precision(B)"],
+        "recall": metrics.results_dict["metrics/recall(B)"],
+        "mAP50": metrics.results_dict["metrics/mAP50(B)"],
+        "mAP50-95": metrics.results_dict["metrics/mAP50-95(B)"]
+    }
+
+def run_predictions_yolo(model, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo", num_images=45):
+    os.makedirs(output_folder, exist_ok=True)
+    image_paths = sorted([os.path.join(image_folder, f) for f in os.listdir(image_folder) if f.endswith(".png")])[:num_images]
+
+    for img_path in image_paths:
+        results = model.predict(img_path, batch=15, save=True, save_txt=True, project=output_folder, name="predict", exist_ok=True)
+
+
+def predict_yolo_onnx_tensor(tensor: torch.Tensor = torch.rand(2, 3, 640, 640),
+                              model_path: str = "self_yolo11n.onnx"):
+    input_np = tensor.detach().cpu().numpy()
+    transform = LetterBox(new_shape=(640, 640))
+    processed = []
+    for i in range(input_np.shape[0]):
+        img_np = input_np[i].transpose(1, 2, 0)
+        img_np = (img_np * 255).astype(np.uint8)
+        resized = transform(image=img_np)
+        resized = resized.astype(np.float32) / 255.0
+        resized = resized.transpose(2, 0, 1)
+        processed.append(resized)
+    input_data = np.stack(processed, axis=0).astype(np.float32)
+    session = ort.InferenceSession(model_path)
+    input_name = session.get_inputs()[0].name
+    outputs = session.run(None, {input_name: input_data})
+    for i, out in enumerate(outputs):
+        logging.info(f"Output[{i}] shape: {out.shape}")
+    return outputs
