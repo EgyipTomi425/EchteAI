@@ -20,6 +20,7 @@ from onnxruntime.quantization import quantize_static, CalibrationDataReader, Qua
 import onnx
 
 import re
+from glob import glob
 
 from ultralytics import YOLO
 from ultralytics.data.augment import LetterBox
@@ -908,12 +909,12 @@ def compute_metrics_yolo(model, data_yaml_path, device):
         "mAP50-95": metrics.results_dict["metrics/mAP50-95(B)"]
     }
 
-def run_predictions_yolo(model, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo", num_images=45):
+def run_predictions_yolo(model, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo", batch_size=8, num_images=40):
     os.makedirs(output_folder, exist_ok=True)
     image_paths = sorted([os.path.join(image_folder, f) for f in os.listdir(image_folder) if f.endswith(".png")])[:num_images]
 
     for img_path in image_paths:
-        results = model.predict(img_path, batch=15, save=True, save_txt=True, project=output_folder, name="predict", exist_ok=True)
+        model.predict(img_path, save=True, save_txt=True, project=output_folder, name="predict", exist_ok=True, batch=batch_size)
 
 
 def predict_yolo_onnx_tensor(tensor: torch.Tensor = torch.rand(2, 3, 640, 640),
@@ -935,3 +936,60 @@ def predict_yolo_onnx_tensor(tensor: torch.Tensor = torch.rand(2, 3, 640, 640),
     for i, out in enumerate(outputs):
         logging.info(f"Output[{i}] shape: {out.shape}")
     return outputs
+
+
+class YoloCalibrationDataLoader(CalibrationDataReader):
+    def __init__(self, image_dir, model_path, batch_size=8, num_batches=5, image_size=(640, 640)):
+        self.image_paths = sorted(glob(os.path.join(image_dir, "*.*")))
+        self.batch_size = batch_size
+        self.num_batches = num_batches
+        self.image_size = image_size
+        self.transform = LetterBox(new_shape=image_size)
+        self.index = 0
+
+        model = onnx.load(model_path)
+        self.input_name = model.graph.input[0].name
+
+    def __len__(self):
+        return min(self.num_batches, (len(self.image_paths) + self.batch_size - 1) // self.batch_size)
+
+    def reset(self):
+        self.index = 0
+
+    def get_next(self):
+        if self.index >= len(self.image_paths) or self.index // self.batch_size >= self.num_batches:
+            return None
+
+        batch_paths = self.image_paths[self.index:self.index + self.batch_size]
+        processed = []
+
+        for path in batch_paths:
+            img = cv2.imread(path)
+            if img is None:
+                continue
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            resized = self.transform(image=img)
+            resized = resized.astype(np.float32) / 255.0
+            resized = resized.transpose(2, 0, 1)  # HWC -> CHW
+            processed.append(resized)
+
+        self.index += self.batch_size
+
+        if processed:
+            batch_np = np.stack(processed, axis=0).astype(np.float32)
+            return {self.input_name: batch_np}
+        else:
+            return None
+        
+def quantize_onnx_model_calibdl(model_path, calib_data_loader, quantized_model_path):
+    quantized_model = quantize_static(
+        model_input=model_path,
+        model_output=quantized_model_path,
+        weight_type=QuantType.QInt16,
+        activation_type=QuantType.QInt16,
+        calibration_data_reader=calib_data_loader
+    )
+    
+    logging.info(f"Quantization is successful: {quantized_model_path}")
+
+

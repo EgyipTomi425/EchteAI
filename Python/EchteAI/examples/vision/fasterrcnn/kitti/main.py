@@ -56,10 +56,23 @@ def main():
     #logging.info(f"YOLOv11 validation metrics: {metrics}")
     #frcnn.run_predictions_yolo(model_yolo, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo", num_images=45)
 
-    model_yolo.export(format="onnx", batch=2)
+    # model_yolo.export(format="onnx", batch=1)
+    # model_yolo_fp32 = frcnn.setup_yolo(model_name="yolo11n.onnx")
+    # frcnn.run_predictions_yolo(model_yolo_fp32, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo/fp32", num_images=40)
 
-    frcnn.predict_yolo_onnx_tensor()
+    # loader = frcnn.YoloCalibrationDataLoader("downloads/yolo_dataset/images/train", "./self_yolo11n.onnx", batch_size=1, num_batches=32)
+    # for _ in range(len(loader)):
+    #     batch = loader.get_next()
+    #     if batch is None:
+    #         break
+    #     frcnn.predict_yolo_onnx_tensor(torch.from_numpy(list(batch.values())[0]))
 
+    #loader = frcnn.YoloCalibrationDataLoader("downloads/yolo_dataset/images/train", "./self_yolo11n.onnx", batch_size=1, num_batches=128)
+    #frcnn.quantize_onnx_model_calibdl("./self_yolo11n.onnx", loader, "./self_yolo11n_int8.onnx")
+    model_yolo_quantized = frcnn.setup_yolo(model_name="yolo11n_int8.onnx")
+    frcnn.run_predictions_yolo(model_yolo_quantized, image_folder="downloads/yolo_dataset/images/train", output_folder="outputs/yolo/int8", num_images=40, batch_size=1)
+    metrics = frcnn.compute_metrics_yolo(model_yolo_quantized, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device)
+    logging.info(f"YOLOv11 validation metrics: {metrics}")
 
     return 0
 
@@ -69,7 +82,7 @@ def main():
     # qconfig = QConfig(
     #     activation=MinMaxObserver.with_args(dtype=torch.quint8, qscheme=torch.per_tensor_affine),
     #     weight=MinMaxObserver.with_args(dtype=torch.qint8, qscheme=torch.per_tensor_symmetric)
-    # )
+    # )[]
     # qconfig_dict = {"": qconfig}
 
     # images, _ = next(iter(val_loader))
