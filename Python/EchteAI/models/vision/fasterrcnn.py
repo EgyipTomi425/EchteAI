@@ -993,3 +993,37 @@ def quantize_onnx_model_calibdl(model_path, calib_data_loader, quantized_model_p
     logging.info(f"Quantization is successful: {quantized_model_path}")
 
 
+from quark.onnx import ModelQuantizer
+from quark.onnx.quantization.config import Config, get_default_config
+
+
+def quantize_yolo_model_with_quark(
+    model_path: str = "self_yolo11n.onnx",
+    image_dir: str = "downloads/yolo_dataset/images/train",
+    output_path: str = "self_yolo11n_quark_int16.onnx",
+    batch_size: int = 1,
+    num_batches: int = 128,
+    image_size: tuple = (640, 640),
+    quant_preset: str = "INT16_CNN_ACCURATE"
+):
+
+    loader = YoloCalibrationDataLoader(
+        image_dir=image_dir,
+        model_path=model_path,
+        batch_size=batch_size,
+        num_batches=num_batches,
+        image_size=image_size
+    )
+
+    quant_config = get_default_config(quant_preset)
+    config = Config(global_quant_config=quant_config)
+
+    quantizer = ModelQuantizer(config)
+    
+    quantizer.quantize_model(
+        model_path,
+        output_path,
+        loader
+    )
+
+    print(f"[✓] Quantization is successful: {output_path}")

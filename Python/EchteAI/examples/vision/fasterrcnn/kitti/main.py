@@ -67,12 +67,17 @@ def main():
     #         break
     #     frcnn.predict_yolo_onnx_tensor(torch.from_numpy(list(batch.values())[0]))
 
-    #loader = frcnn.YoloCalibrationDataLoader("downloads/yolo_dataset/images/train", "./self_yolo11n.onnx", batch_size=1, num_batches=128)
-    #frcnn.quantize_onnx_model_calibdl("./self_yolo11n.onnx", loader, "./self_yolo11n_int8.onnx")
-    model_yolo_quantized = frcnn.setup_yolo(model_name="yolo11n_int8.onnx")
-    frcnn.run_predictions_yolo(model_yolo_quantized, image_folder="downloads/yolo_dataset/images/train", output_folder="outputs/yolo/int8", num_images=40, batch_size=1)
-    metrics = frcnn.compute_metrics_yolo(model_yolo_quantized, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device)
-    logging.info(f"YOLOv11 validation metrics: {metrics}")
+    # loader = frcnn.YoloCalibrationDataLoader("downloads/yolo_dataset/images/train", "./self_yolo11n.onnx", batch_size=1, num_batches=128)
+    # frcnn.quantize_onnx_model_calibdl("./self_yolo11n.onnx", loader, "./self_yolo11n_int8.onnx")
+    # model_yolo_quantized = frcnn.setup_yolo(model_name="yolo11n_int8.onnx")
+    # frcnn.run_predictions_yolo(model_yolo_quantized, image_folder="downloads/yolo_dataset/images/train", output_folder="outputs/yolo/int8", num_images=40, batch_size=1)
+    # metrics = frcnn.compute_metrics_yolo(model_yolo_quantized, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device)
+    # logging.info(f"YOLOv11 validation metrics: {metrics}")
+
+    #frcnn.quantize_yolo_model_with_quark()
+    #self_yolo11n_quark_int16 = frcnn.setup_yolo("yolo11n_quark_int16.onnx")
+    #logging.info(frcnn.compute_metrics_yolo(self_yolo11n_quark_int16, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device))
+    #frcnn.run_predictions_yolo(self_yolo11n_quark_int16, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo/quark", num_images=45)
 
     return 0
 
