@@ -909,7 +909,7 @@ def compute_metrics_yolo(model, data_yaml_path, device):
         "mAP50-95": metrics.results_dict["metrics/mAP50-95(B)"]
     }
 
-def run_predictions_yolo(model, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo", batch_size=8, num_images=40):
+def run_predictions_yolo(model, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo", batch_size=1, num_images=40):
     os.makedirs(output_folder, exist_ok=True)
     image_paths = sorted([os.path.join(image_folder, f) for f in os.listdir(image_folder) if f.endswith(".png")])[:num_images]
 
