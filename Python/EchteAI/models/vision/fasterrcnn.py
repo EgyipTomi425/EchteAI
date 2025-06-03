@@ -884,7 +884,7 @@ def onnx_conv_outputs_from_batch(model_path, input_tensor, pattern=r".*conv.*"):
 
 
 
-def setup_yolo(model_name="yolo11n.pt", pretrained=True):
+def setup_yolo(model_name="yolo11x.pt", pretrained=True):
     if os.path.exists("./self_"+model_name):
         model = YOLO("./self_"+model_name)
     else:
@@ -893,7 +893,7 @@ def setup_yolo(model_name="yolo11n.pt", pretrained=True):
             model = model.reset()
     return model
 
-def train_yolo(model, data_yaml_path, device, epochs=10, model_name="yolo11n.pt"):
+def train_yolo(model, data_yaml_path, device, epochs=10, model_name="yolo11x.pt"):
     if os.path.exists("./self_"+model_name):
         return model
     model.train(data=data_yaml_path, epochs=epochs, device=device)
@@ -918,7 +918,7 @@ def run_predictions_yolo(model, image_folder="downloads/yolo_dataset/images/val"
 
 
 def predict_yolo_onnx_tensor(tensor: torch.Tensor = torch.rand(2, 3, 640, 640),
-                              model_path: str = "self_yolo11n.onnx"):
+                              model_path: str = "self_yolo11x.onnx"):
     input_np = tensor.detach().cpu().numpy()
     transform = LetterBox(new_shape=(640, 640))
     processed = []
@@ -998,9 +998,9 @@ from quark.onnx.quantization.config import Config, get_default_config
 
 
 def quantize_yolo_model_with_quark(
-    model_path: str = "self_yolo11n.onnx",
+    model_path: str = "self_yolo11x.onnx",
     image_dir: str = "downloads/yolo_dataset/images/train",
-    output_path: str = "self_yolo11n_quark_int16.onnx",
+    output_path: str = "self_yolo11x_quark_int16.onnx",
     batch_size: int = 1,
     num_batches: int = 128,
     image_size: tuple = (640, 640),
@@ -1016,6 +1016,39 @@ def quantize_yolo_model_with_quark(
     )
 
     quant_config = get_default_config(quant_preset)
+    config = Config(global_quant_config=quant_config)
+
+    quantizer = ModelQuantizer(config)
+    
+    quantizer.quantize_model(
+        model_path,
+        output_path,
+        loader
+    )
+
+    print(f"[✓] Quantization is successful: {output_path}")
+
+
+def quantize_yolo_model_with_quark_adaquant(
+    model_path: str = "self_yolo11x.onnx",
+    image_dir: str = "downloads/yolo_dataset/images/train",
+    output_path: str = "self_yolo11_quark_int16.onnx",
+    batch_size: int = 1,
+    num_batches: int = 128,
+    image_size: tuple = (640, 640),
+    quant_preset: str = "INT16_CNN_ACCURATE"
+):
+
+    loader = YoloCalibrationDataLoader(
+        image_dir=image_dir,
+        model_path=model_path,
+        batch_size=batch_size,
+        num_batches=num_batches,
+        image_size=image_size
+    )
+
+    quant_config = get_default_config(quant_preset)
+    quant_config.extra_options["FastFinetune"]["OptimAlgorithm"] = "adaquant"
     config = Config(global_quant_config=quant_config)
 
     quantizer = ModelQuantizer(config)
