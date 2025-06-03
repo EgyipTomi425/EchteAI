@@ -48,10 +48,10 @@ def main():
     model.eval()
 
 
-    #dl.convert_kitti_to_yolo_structure() ## Első futtattáskor ne legyen kikommentezve
+    dl.convert_kitti_to_yolo_structure() ## Első futtattáskor ne legyen kikommentezve
     model_yolo = frcnn.setup_yolo()
     print(model_yolo)
-    model_yolo = frcnn.train_yolo(model_yolo, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device, epochs=5)
+    model_yolo = frcnn.train_yolo(model_yolo, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device)
     metrics = frcnn.compute_metrics_yolo(model_yolo, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device)
     logging.info(f"YOLOv11 validation metrics: {metrics}")
     frcnn.run_predictions_yolo(model_yolo, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo", num_images=45)
