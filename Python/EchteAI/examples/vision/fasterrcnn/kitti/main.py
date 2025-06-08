@@ -11,6 +11,8 @@ from torch.fx import symbolic_trace
 from torch.fx import symbolic_trace
 from torch.quantization import QConfig, MinMaxObserver
 from torch.quantization.quantize_fx import prepare_fx, convert_fx
+from datetime import datetime
+
 
 from ultralytics import YOLO
 
@@ -47,44 +49,95 @@ def main():
     model = frcnn.train_fasterrcnn(model, train_loader, val_loader, device, num_epochs)
     model.eval()
 
+    device = "cpu"
+    model_quantized = frcnn.quantize_fasterrcnn(model, train_loader)
+    model_quantized = frcnn.quantize_dynamic(model_quantized)
+    print(model_quantized)
+    torch.save(model_quantized.state_dict(), "model_quantized_state_dict.pt")
+    model.load_state_dict(torch.load("model_quantized_state_dict.pt", map_location="cpu"))
+    val_out_qint8_static = os.path.join("outputs", "qint8_static", "validation")
+    frcnn.run_predictions_fasterrcnn(model, val_loader, device, val_dataset.dataset if hasattr(val_dataset, "dataset") else val_dataset, val_out_qint8_static, evaluate=True, num_batches=3)
 
-    dl.convert_kitti_to_yolo_structure() ## Első futtattáskor ne legyen kikommentezve
-    model_yolo = frcnn.setup_yolo()
+    return 0
+
+    #dl.convert_kitti_to_yolo_structure() ## Első futtattáskor ne legyen kikommentezve
+    model_yolo = frcnn.setup_yolo(model_name="yolo11s.pt")
     print(model_yolo)
-    model_yolo = frcnn.train_yolo(model_yolo, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device)
-    metrics = frcnn.compute_metrics_yolo(model_yolo, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device)
-    logging.info(f"YOLOv11 validation metrics: {metrics}")
-    frcnn.run_predictions_yolo(model_yolo, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo", num_images=45)
+    model_yolo = frcnn.train_yolo(model_yolo, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device, model_name="yolo11s.pt")
+    # metrics = frcnn.compute_metrics_yolo(model_yolo, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device)
+    # logging.info(f"YOLOv11 validation metrics: {metrics}")
+    # frcnn.run_predictions_yolo(model_yolo, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo", num_images=45)
 
-    model_yolo.export(format="onnx", batch=1)
-    model_yolo_fp32 = frcnn.setup_yolo(model_name="yolo11x.onnx")
-    frcnn.run_predictions_yolo(model_yolo_fp32, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo/fp32", num_images=40)
+    model_yolo.export(format="onnx")
+    model_yolo_fp32 = frcnn.setup_yolo(model_name="yolo11s.onnx")
+    #frcnn.run_predictions_yolo(model_yolo_fp32, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo/fp32", num_images=40)
 
-    loader = frcnn.YoloCalibrationDataLoader("downloads/yolo_dataset/images/train", "./self_yolo11x.onnx", batch_size=1, num_batches=32)
-    for _ in range(len(loader)):
-        batch = loader.get_next()
-        if batch is None:
-            break
-        frcnn.predict_yolo_onnx_tensor(torch.from_numpy(list(batch.values())[0]))
+    # loader = frcnn.YoloCalibrationDataLoader("downloads/yolo_dataset/images/train", "./self_yolo11x.onnx", batch_size=1, num_batches=32)
+    # for _ in range(len(loader)):
+    #     batch = loader.get_next()
+    #     if batch is None:
+    #         break
+    #     frcnn.predict_yolo_onnx_tensor(torch.from_numpy(list(batch.values())[0]))
 
-    loader = frcnn.YoloCalibrationDataLoader("downloads/yolo_dataset/images/train", "./self_yolo11x.onnx", batch_size=1, num_batches=128)
-    frcnn.quantize_onnx_model_calibdl("./self_yolo11x.onnx", loader, "./self_yolo11x_int8.onnx")
-    model_yolo_quantized = frcnn.setup_yolo(model_name="yolo11x_int8.onnx")
-    frcnn.run_predictions_yolo(model_yolo_quantized, image_folder="downloads/yolo_dataset/images/train", output_folder="outputs/yolo/int8", num_images=40, batch_size=1)
-    metrics = frcnn.compute_metrics_yolo(model_yolo_quantized, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device)
-    logging.info(f"YOLOv11 validation metrics: {metrics}")
-
-    frcnn.quantize_yolo_model_with_quark()
-    self_yolo11x_quark_int16 = frcnn.setup_yolo("yolo11x_quark_int16.onnx")
-    logging.info(frcnn.compute_metrics_yolo(self_yolo11x_quark_int16, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device))
-    frcnn.run_predictions_yolo(self_yolo11x_quark_int16, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo/quark", num_images=45)
+    device="cpu"
+    # loader = frcnn.YoloCalibrationDataLoader("downloads/yolo_dataset/images/train", "./self_yolo11x.onnx", batch_size=1, num_batches=128)
+    # frcnn.quantize_onnx_model_calibdl("./self_yolo11x.onnx", loader, "./self_yolo11x_int8.onnx")
+    # model_yolo_quantized = frcnn.setup_yolo(model_name="yolo11x_int8.onnx")
+    # frcnn.run_predictions_yolo(model_yolo_quantized, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo/int8", num_images=40, batch_size=1)
+    # metrics = frcnn.compute_metrics_yolo(model_yolo_quantized, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device)
+    # logging.info(f"YOLOv11 validation metrics: {metrics}")
 
     # frcnn.quantize_yolo_model_with_quark_adaquant(output_path = "self_yolo11x_quark_int16aq.onnx",)
     # self_yolo11x_quark_int16 = frcnn.setup_yolo("yolo11x_quark_int16aq.onnx")
     # logging.info(frcnn.compute_metrics_yolo(self_yolo11x_quark_int16, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device))
     # frcnn.run_predictions_yolo(self_yolo11x_quark_int16, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo/quarkaq", num_images=45)
 
+    quant_presets = [
+        "INT8_CNN_DEFAULT", "INT16_CNN_DEFAULT", "INT8_CNN_ACCURATE", "INT16_CNN_ACCURATE",
+        "XINT8", "XINT8_ADAROUND", "XINT8_ADAQUANT", "S8S8_AAWS", "S8S8_AAWS_ADAROUND",
+        "S8S8_AAWS_ADAQUANT", "U8S8_AAWS", "U8S8_AAWS_ADAROUND", "U8S8_AAWS_ADAQUANT",
+        "S16S8_ASWS", "S16S8_ASWS_ADAROUND", "S16S8_ASWS_ADAQUANT", "A8W8", "A16W8",
+        "U16S8_AAWS", "U16S8_AAWS_ADAROUND", "U16S8_AAWS_ADAQUANT"
+    ]
 
+    for preset in quant_presets:
+        try:
+            safe_name = preset.lower()
+            output_model_path = f"self_yolo_{safe_name}.onnx"
+            output_folder = f"outputs/yolo/{safe_name}"
+
+            logging.info(f"[{preset}] Quantization started...")
+
+            frcnn.quantize_yolo_model_with_quark_adaquant(
+                model_path="self_yolo11s.onnx",
+                image_dir="downloads/yolo_dataset/images/train",
+                output_path=output_model_path,
+                batch_size=1,
+                num_batches=32,
+                image_size=(640, 640),
+                quant_preset=preset
+            )
+
+            model = frcnn.setup_yolo(output_model_path)
+
+            metrics = frcnn.compute_metrics_yolo(
+                model,
+                data_yaml_path="downloads/yolo_dataset/kitti.yaml",
+                device=device
+            )
+            logging.info(f"[{preset}] validation metrics: {metrics}")
+
+            frcnn.run_predictions_yolo(
+                model,
+                image_folder="downloads/yolo_dataset/images/val",
+                output_folder=output_folder,
+                num_images=45
+            )
+
+            logging.info(f"[{preset}] ✅ Done")
+
+        except Exception as e:
+            logging.error(f"[{preset}] ❌ Failed: {e}")
 
     return 0
 

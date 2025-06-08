@@ -19,6 +19,10 @@ import torch.nn.functional as F
 from onnxruntime.quantization import quantize_static, CalibrationDataReader, QuantType
 import onnx
 
+from quark.onnx import ModelQuantizer, PowerOfTwoMethod, QuantType, QuantFormat
+from quark.onnx.quantization.config.config import Config, QuantizationConfig
+import quark
+
 import re
 from glob import glob
 
@@ -62,7 +66,7 @@ def compute_iou_fasterrcnn(boxA, boxB):
     return interArea / float(boxAArea + boxBArea - interArea + 1e-6)
 
 def compute_metrics_fasterrcnn(data_loader, model, device, iou_threshold=0.5):
-    model.eval()
+    #model.eval()
     total_gt = 0
     total_tp = 0
     total_pred = 0
@@ -192,8 +196,8 @@ def train_fasterrcnn(model, train_loader, val_loader, device, num_epochs, model_
 
 def run_predictions_fasterrcnn(model, data_loader, device, dataset, output_folder, evaluate=False, num_batches = -1, batch_size=None):
     os.makedirs(output_folder, exist_ok=True)
-    model.to(device)
-    model.eval()
+    #model.to(device)
+    #model.eval()
     if batch_size is not None:
         idx_to_class = dataset.idx_to_class
         class_to_idx = dataset.class_to_idx
@@ -1002,7 +1006,7 @@ def quantize_yolo_model_with_quark(
     image_dir: str = "downloads/yolo_dataset/images/train",
     output_path: str = "self_yolo11x_quark_int16.onnx",
     batch_size: int = 1,
-    num_batches: int = 128,
+    num_batches: int = 32,
     image_size: tuple = (640, 640),
     quant_preset: str = "INT16_CNN_ACCURATE"
 ):
@@ -1016,6 +1020,7 @@ def quantize_yolo_model_with_quark(
     )
 
     quant_config = get_default_config(quant_preset)
+
     config = Config(global_quant_config=quant_config)
 
     quantizer = ModelQuantizer(config)
@@ -1034,7 +1039,7 @@ def quantize_yolo_model_with_quark_adaquant(
     image_dir: str = "downloads/yolo_dataset/images/train",
     output_path: str = "self_yolo11_quark_int16.onnx",
     batch_size: int = 1,
-    num_batches: int = 128,
+    num_batches: int = 1,
     image_size: tuple = (640, 640),
     quant_preset: str = "INT16_CNN_ACCURATE"
 ):
