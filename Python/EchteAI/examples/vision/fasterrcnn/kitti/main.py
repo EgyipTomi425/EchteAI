@@ -57,7 +57,8 @@ def main():
     logging.info(f"YOLOv11 validation metrics: {metrics}")
     frcnn.run_predictions_yolo(model_yolo, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo", num_images=45)
 
-    model_yolo.export(format="onnx")
+    #model_yolo.export(format="onnx")
+    model_yolo.export(format="onnx", imgsz=(640, 640), dynamic=False)
     model_yolo_fp32 = frcnn.setup_yolo(model_name="yolo11s.onnx")
     frcnn.run_predictions_yolo(model_yolo_fp32, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo/fp32", num_images=40)
 
@@ -70,14 +71,14 @@ def main():
 
     device="cpu"
     loader = frcnn.YoloCalibrationDataLoader("downloads/yolo_dataset/images/train", "./self_yolo11s.onnx", batch_size=1, num_batches=128)
-    frcnn.quantize_onnx_model_calibdl("./self_yolo11s.onnx", loader, "./self_yolo11s_int8.onnx")
-    model_yolo_quantized = frcnn.setup_yolo(model_name="yolo11s_int8.onnx")
+    frcnn.quantize_onnx_model_calibdl("./self_yolo11s.onnx", loader, "./self_yolo11s_int16.onnx")
+    model_yolo_quantized = frcnn.setup_yolo(model_name="yolo11s_int16.onnx")
     frcnn.run_predictions_yolo(model_yolo_quantized, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo/int8", num_images=40, batch_size=1)
     metrics = frcnn.compute_metrics_yolo(model_yolo_quantized, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device)
     logging.info(f"YOLOv11 validation metrics: {metrics}")
 
-    frcnn.quantize_yolo_model_with_quark_adaquant(output_path = "self_yolo11s_quark_int16aq.onnx",)
-    self_yolo11s_quark_int16 = frcnn.setup_yolo("yolo11s_quark_int16aq.onnx")
+    frcnn.quantize_yolo_model_with_quark(output_path = "self_yolo11s_quark_int16.onnx",)
+    self_yolo11s_quark_int16 = frcnn.setup_yolo("yolo11s_quark_int16.onnx")
     logging.info(frcnn.compute_metrics_yolo(self_yolo11s_quark_int16, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device))
     frcnn.run_predictions_yolo(self_yolo11s_quark_int16, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo/quarkaq", num_images=45)
 
@@ -97,7 +98,7 @@ def main():
 
             logging.info(f"[{preset}] Quantization started...")
 
-            frcnn.quantize_yolo_model_with_quark_adaquant(
+            frcnn.quantize_yolo_model_with_quark(
                 model_path="self_yolo11s.onnx",
                 image_dir="downloads/yolo_dataset/images/train",
                 output_path=output_model_path,
