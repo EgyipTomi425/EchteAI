@@ -918,13 +918,14 @@ def run_predictions_yolo(model, image_folder="downloads/yolo_dataset/images/val"
     image_paths = sorted([os.path.join(image_folder, f) for f in os.listdir(image_folder) if f.endswith(".png")])[:num_images]
 
     for img_path in image_paths:
-        model.predict(img_path, save=True, save_txt=True, project=output_folder, name="predict", exist_ok=True, batch=batch_size)
+        model.predict(img_path, save=True, save_txt=True, project=output_folder, name="predict", batch=batch_size)
 
 
 def predict_yolo_onnx_tensor(tensor: torch.Tensor = torch.rand(2, 3, 640, 640),
                               model_path: str = "self_yolo11x.onnx"):
     input_np = tensor.detach().cpu().numpy()
-    transform = LetterBox(new_shape=(640, 640))
+    _, _, h, w = tensor.shape
+    transform = LetterBox(new_shape=(h, w))
     processed = []
     for i in range(input_np.shape[0]):
         img_np = input_np[i].transpose(1, 2, 0)
@@ -1002,7 +1003,7 @@ from quark.onnx.quantization.config import Config, get_default_config
 
 
 def quantize_yolo_model_with_quark(
-    model_path: str = "self_yolo11x.onnx",
+    model_path: str = "self_yolo11s.onnx",
     image_dir: str = "downloads/yolo_dataset/images/train",
     output_path: str = "self_yolo11x_quark_int16.onnx",
     batch_size: int = 1,
@@ -1035,7 +1036,7 @@ def quantize_yolo_model_with_quark(
 
 
 def quantize_yolo_model_with_quark_adaquant(
-    model_path: str = "self_yolo11x.onnx",
+    model_path: str = "self_yolo11s.onnx",
     image_dir: str = "downloads/yolo_dataset/images/train",
     output_path: str = "self_yolo11_quark_int16.onnx",
     batch_size: int = 1,

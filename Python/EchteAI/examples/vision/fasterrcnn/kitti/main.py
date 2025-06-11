@@ -61,6 +61,8 @@ def main():
     model_yolo.export(format="onnx", imgsz=(640, 640), dynamic=False)
     model_yolo_fp32 = frcnn.setup_yolo(model_name="yolo11s.onnx")
     frcnn.run_predictions_yolo(model_yolo_fp32, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo/fp32", num_images=40)
+    metrics = frcnn.compute_metrics_yolo(model_yolo_fp32, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device="cpu")
+    logging.info(f"YOLOv11 onnx validation metrics: {metrics}")
 
     # loader = frcnn.YoloCalibrationDataLoader("downloads/yolo_dataset/images/train", "./self_yolo11s.onnx", batch_size=1, num_batches=32)
     # for _ in range(len(loader)):
@@ -70,17 +72,14 @@ def main():
     #     frcnn.predict_yolo_onnx_tensor(torch.from_numpy(list(batch.values())[0]))
 
     device="cpu"
-    loader = frcnn.YoloCalibrationDataLoader("downloads/yolo_dataset/images/train", "./self_yolo11s.onnx", batch_size=1, num_batches=128)
+    loader = frcnn.YoloCalibrationDataLoader("downloads/yolo_dataset/images/train", "./self_yolo11s.onnx", batch_size=1, num_batches=32)
     frcnn.quantize_onnx_model_calibdl("./self_yolo11s.onnx", loader, "./self_yolo11s_int16.onnx")
     model_yolo_quantized = frcnn.setup_yolo(model_name="yolo11s_int16.onnx")
-    frcnn.run_predictions_yolo(model_yolo_quantized, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo/int8", num_images=40, batch_size=1)
+    frcnn.run_predictions_yolo(model_yolo_quantized, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo/int16", num_images=40, batch_size=1)
     metrics = frcnn.compute_metrics_yolo(model_yolo_quantized, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device)
-    logging.info(f"YOLOv11 validation metrics: {metrics}")
+    logging.info(f"YOLOv11 int16 validation metrics: {metrics}")
 
-    frcnn.quantize_yolo_model_with_quark(output_path = "self_yolo11s_quark_int16.onnx",)
-    self_yolo11s_quark_int16 = frcnn.setup_yolo("yolo11s_quark_int16.onnx")
-    logging.info(frcnn.compute_metrics_yolo(self_yolo11s_quark_int16, data_yaml_path="downloads/yolo_dataset/kitti.yaml", device=device))
-    frcnn.run_predictions_yolo(self_yolo11s_quark_int16, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo/quarkaq", num_images=45)
+    return 0
 
     quant_presets = [
         "INT8_CNN_DEFAULT", "INT16_CNN_DEFAULT", "INT8_CNN_ACCURATE", "INT16_CNN_ACCURATE",
