@@ -1066,3 +1066,62 @@ def quantize_yolo_model_with_quark_adaquant(
     )
 
     print(f"[✓] Quantization is successful: {output_path}")
+
+def visualize_onnx_cnn_outputs(model_path, input_tensor, output_folder="outputs", filename_prefix="activation", vmin=None, vmax=None, depth=-1, layer=None):
+    os.makedirs(output_folder, exist_ok=True)
+
+    session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+    input_name = session.get_inputs()[0].name
+    outputs = session.run(None, {input_name: input_tensor.cpu().numpy()})
+    output_names = [o.name for o in session.get_outputs()]
+    output_items = list(zip(output_names, outputs))
+
+    # (B, C, H, W)
+    output_items = [(k, v) for k, v in output_items if torch.tensor(v).ndim == 4]
+    if not output_items:
+        raise ValueError("Nincs megfelelő 4D-s konvolúciós output a modellben.")
+
+    if layer is not None:
+        if not (0 < layer <= len(output_items)):
+            raise ValueError(f"Invalid layer index: {layer}. It must be between 1 and {len(output_items)}.")
+        output_items = [output_items[layer - 1]]
+
+    batch_size = input_tensor.shape[0]
+    largest_shape = max([v.shape[-2:] for _, v in output_items])
+    logging.info(f"Largest shape is: {largest_shape}.")
+
+    for i in range(batch_size):
+        heatmap = np.zeros(largest_shape, dtype=np.float32)
+        weight_sum = np.zeros(largest_shape, dtype=np.float32)
+        depth_counter = depth
+
+        for name, feature_map in output_items:
+            fmap = torch.tensor(feature_map[i])  # [C, H, W]
+            if fmap.ndim != 3:
+                continue
+            fmap = fmap.cpu().detach().numpy()
+            avg_map = np.max(fmap, axis=0)
+
+            resized_map = cv2.resize(avg_map, (largest_shape[1], largest_shape[0]), interpolation=cv2.INTER_CUBIC)
+            heatmap += resized_map
+            weight_sum += 1
+
+            if depth_counter == 1:
+                break
+            elif depth_counter > 0:
+                depth_counter -= 1
+
+        heatmap /= np.maximum(weight_sum, 1e-6)
+
+        if vmin is None or vmax is None:
+            vmin_, vmax_ = heatmap.min(), heatmap.max()
+        else:
+            vmin_, vmax_ = vmin, vmax
+
+        heatmap = np.clip((heatmap - vmin_) / (vmax_ - vmin_), 0, 1)
+        heatmap = np.uint8(heatmap * 255)
+        heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+
+        output_path = os.path.join(output_folder, f"{filename_prefix}_{i}.png")
+        cv2.imwrite(output_path, heatmap)
+        logging.info(f"Saved heatmap for image {i}: {output_path}")
