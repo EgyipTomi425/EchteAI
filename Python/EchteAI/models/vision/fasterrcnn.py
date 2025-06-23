@@ -1022,8 +1022,6 @@ def quantize_yolo_model_with_quark(
     quant_preset: str = "INT16_CNN_ACCURATE",
     device: str = "cpu"
 ):
-    from quark.onnx import Config, ModelQuantizer, get_default_config
-
     loader = YoloCalibrationDataLoader(
         image_dir=image_dir,
         model_path=model_path,
