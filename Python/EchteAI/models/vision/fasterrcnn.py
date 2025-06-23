@@ -1015,18 +1015,13 @@ from quark.onnx.quantization.config import Config, get_default_config
 def quantize_yolo_model_with_quark(
     model_path: str = "self_yolo11s.onnx",
     image_dir: str = "downloads/yolo_dataset/images/train",
-    output_path: str = "self_yolo11x_quark_int16.onnx",
+    output_path: str = "self_yolo11x_quark_int8.onnx",
     batch_size: int = 1,
     num_batches: int = 32,
     image_size: tuple = (640, 640),
-    quant_preset: str = "INT16_CNN_ACCURATE",
+    quant_preset: str = "INT8_CNN_DEFAULT",
     device: str = "cpu"
 ):
-    if device.lower() == "cuda":
-        os.environ["QUARK_EXECUTION_PROVIDER"] = "CUDAExecutionProvider"
-    else:
-        os.environ["QUARK_EXECUTION_PROVIDER"] = "CPUExecutionProvider"
-
     loader = YoloCalibrationDataLoader(
         image_dir=image_dir,
         model_path=model_path,
@@ -1036,12 +1031,17 @@ def quantize_yolo_model_with_quark(
     )
 
     quant_config = get_default_config(quant_preset)
-    config = Config(global_quant_config=quant_config)
 
+    if device.lower() == "cuda":
+        quant_config.execution_providers = ["CUDAExecutionProvider"]
+    else:
+        quant_config.execution_providers = ["CPUExecutionProvider"]
+
+    config = Config(global_quant_config=quant_config)
     quantizer = ModelQuantizer(config)
     quantizer.quantize_model(model_path, output_path, loader)
 
-    print(f"[✓] Quantization is successful: {output_path} on device: {device.upper()}")
+    print(f"[✓] Quantization is complete: {output_path} (device: {device})")
 
 def quantize_yolo_model_with_quark_adaquant(
     model_path: str = "self_yolo11s.onnx",
