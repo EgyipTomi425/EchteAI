@@ -997,6 +997,17 @@ def quantize_onnx_model_calibdl(model_path, calib_data_loader, quantized_model_p
     
     logging.info(f"Quantization is successful: {quantized_model_path}")
 
+def quantize_onnx_model_calibdl_int8(model_path, calib_data_loader, quantized_model_path):
+    quantized_model = quantize_static(
+        model_input=model_path,
+        model_output=quantized_model_path,
+        weight_type=QuantType.QInt8,
+        activation_type=QuantType.QInt8,
+        calibration_data_reader=calib_data_loader
+    )
+    
+    logging.info(f"Quantization is successful: {quantized_model_path}")
+
 
 from quark.onnx import ModelQuantizer
 from quark.onnx.quantization.config import Config, get_default_config
