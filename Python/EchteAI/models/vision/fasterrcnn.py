@@ -1039,7 +1039,6 @@ def quantize_yolo_model_with_quark(
 
     config = Config(
         global_quant_config=quant_config,
-        device=device.lower(),
         execution_providers=providers
     )
 
