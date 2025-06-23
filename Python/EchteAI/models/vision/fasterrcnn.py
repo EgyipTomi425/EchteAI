@@ -1022,6 +1022,11 @@ def quantize_yolo_model_with_quark(
     quant_preset: str = "INT16_CNN_ACCURATE",
     device: str = "cpu"
 ):
+    if device.lower() == "cuda":
+        os.environ["QUARK_EXECUTION_PROVIDER"] = "CUDAExecutionProvider"
+    else:
+        os.environ["QUARK_EXECUTION_PROVIDER"] = "CPUExecutionProvider"
+
     loader = YoloCalibrationDataLoader(
         image_dir=image_dir,
         model_path=model_path,
@@ -1031,24 +1036,10 @@ def quantize_yolo_model_with_quark(
     )
 
     quant_config = get_default_config(quant_preset)
-
-    if device.lower() == "cuda":
-        providers = ["CUDAExecutionProvider"]
-    else:
-        providers = ["CPUExecutionProvider"]
-
-    config = Config(
-        global_quant_config=quant_config,
-        execution_providers=providers
-    )
+    config = Config(global_quant_config=quant_config)
 
     quantizer = ModelQuantizer(config)
-
-    quantizer.quantize_model(
-        model_path,
-        output_path,
-        loader
-    )
+    quantizer.quantize_model(model_path, output_path, loader)
 
     print(f"[✓] Quantization is successful: {output_path} on device: {device.upper()}")
 
