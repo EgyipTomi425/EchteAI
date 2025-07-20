@@ -410,6 +410,34 @@ def visualize_cnn_outputs(outputs, output_folder="outputs", filename="activation
     cv2.imwrite(output_path, heatmap)
     logging.info(f"Picture saved: {output_path}.")
 
+def visualize_cnn_batch_outputs(outputs, output_folder="outputs", filename="activation_heatmap",
+                                vmin=None, vmax=None, depth=-1, layer=None):
+    os.makedirs(output_folder, exist_ok=True)
+
+    outputs = {k: v for k, v in outputs.items() if torch.tensor(v).ndim == 4}
+    output_items = list(outputs.items())
+
+    if not output_items:
+        raise ValueError("Nincs 4D-s (batch-es) feature map az outputok között.")
+
+    batch_size = next(iter(outputs.values())).shape[0]
+
+    for batch_idx in range(batch_size):
+        single_outputs = {
+            name: torch.tensor(fmap[batch_idx:batch_idx+1]) for name, fmap in outputs.items()
+        }
+
+        current_filename = f"{filename}_b{batch_idx}"
+        visualize_cnn_outputs(
+            outputs=single_outputs,
+            output_folder=output_folder,
+            filename=current_filename,
+            vmin=vmin,
+            vmax=vmax,
+            depth=depth,
+            layer=layer
+        )
+
 def fit_and_plot_distribution(outputs1, outputs2, output_folder="outputs", filename="distribution_fit", layer=-1, depth=-1):
     os.makedirs(output_folder, exist_ok=True)
 
@@ -900,17 +928,17 @@ def setup_yolo(model_name="yolo11x.pt", pretrained=True):
 def train_yolo(model, data_yaml_path, device, epochs=10, model_name="yolo11x.pt"):
     if os.path.exists("./self_"+model_name):
         return model
-    model.train(data=data_yaml_path, epochs=epochs, device=device)
+    model.train(data=data_yaml_path, epochs=epochs, device=device, weight_decay=0.001)
     model.save("self_"+model_name)
     return model
 
 def compute_metrics_yolo(model, data_yaml_path, device):
     metrics = model.val(data=data_yaml_path, device=device)
     return {
-        "precision": metrics.results_dict["metrics/precision(B)"],
-        "recall": metrics.results_dict["metrics/recall(B)"],
-        "mAP50": metrics.results_dict["metrics/mAP50(B)"],
-        "mAP50-95": metrics.results_dict["metrics/mAP50-95(B)"]
+        "precision": float(metrics.results_dict["metrics/precision(B)"]),
+        "recall": float(metrics.results_dict["metrics/recall(B)"]),
+        "mAP50": float(metrics.results_dict["metrics/mAP50(B)"]),
+        "mAP50-95": float(metrics.results_dict["metrics/mAP50-95(B)"])
     }
 
 def run_predictions_yolo(model, image_folder="downloads/yolo_dataset/images/val", output_folder="outputs/yolo", batch_size=1, num_images=40):
@@ -986,16 +1014,23 @@ class YoloCalibrationDataLoader(CalibrationDataReader):
         else:
             return None
         
-def quantize_onnx_model_calibdl(model_path, calib_data_loader, quantized_model_path):
+def quantize_onnx_model_calibdl(model_path, calib_data_loader, quantized_model_path, quantization_dtype="int16"):
+    if quantization_dtype == "int8":
+        weight_type = QuantType.QInt8
+        activation_type = QuantType.QInt8
+    else:
+        weight_type = QuantType.QInt16
+        activation_type = QuantType.QInt16
+
     quantized_model = quantize_static(
         model_input=model_path,
         model_output=quantized_model_path,
-        weight_type=QuantType.QInt16,
-        activation_type=QuantType.QInt16,
+        weight_type=weight_type,
+        activation_type=activation_type,
         calibration_data_reader=calib_data_loader
     )
-    
-    logging.info(f"Quantization is successful: {quantized_model_path}")
+
+    logging.info(f"Quantization ({quantization_dtype.upper()}) successful: {quantized_model_path}")    
 
 def quantize_onnx_model_calibdl_int8(model_path, calib_data_loader, quantized_model_path):
     quantized_model = quantize_static(
