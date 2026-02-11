@@ -44,7 +44,7 @@ def compute_iou_fasterrcnn(boxA, boxB):
     boxBArea = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1])
     return interArea / float(boxAArea + boxBArea - interArea + 1e-6)
 
-def compute_metrics_fasterrcnn(data_loader, model, device, iou_threshold=0.5):
+def compute_metrics_fasterrcnn(data_loader, model, device, iou_threshold=0.5, score_threshold=0.5):
     #model.eval()
     total_gt = 0
     total_tp = 0
@@ -65,7 +65,7 @@ def compute_metrics_fasterrcnn(data_loader, model, device, iou_threshold=0.5):
                 pred_boxes = prediction["boxes"].cpu().numpy()
                 pred_labels = prediction["labels"].cpu().numpy()
                 pred_scores = prediction["scores"].cpu().numpy()
-                keep = pred_scores >= 0.5
+                keep = pred_scores >= score_threshold
                 pred_boxes = pred_boxes[keep]
                 pred_labels = pred_labels[keep]
                 total_pred += len(pred_boxes)
@@ -91,7 +91,7 @@ def compute_metrics_fasterrcnn(data_loader, model, device, iou_threshold=0.5):
     mean_iou = sum(iou_list) / len(iou_list) if iou_list else 0
     return {"accuracy": accuracy, "precision": precision, "mean_iou": mean_iou}
 
-def compute_batch_metrics_fasterrcnn(targets, predictions, iou_threshold=0.5):
+def compute_batch_metrics_fasterrcnn(targets, predictions, iou_threshold=0.5, score_threshold=0.5):
     total_gt = 0
     total_tp = 0
     total_pred = 0
@@ -105,7 +105,7 @@ def compute_batch_metrics_fasterrcnn(targets, predictions, iou_threshold=0.5):
         pred_boxes = prediction["boxes"].cpu().numpy()
         pred_labels = prediction["labels"].cpu().numpy()
         pred_scores = prediction["scores"].cpu().numpy()
-        keep = pred_scores >= 0.5
+        keep = pred_scores >= score_threshold
         pred_boxes = pred_boxes[keep]
         pred_labels = pred_labels[keep]
         total_pred += len(pred_boxes)
@@ -173,7 +173,7 @@ def train_fasterrcnn(model, train_loader, val_loader, device, num_epochs, model_
         torch.save(model.state_dict(), model_path)
     return model
 
-def run_predictions_fasterrcnn(model, data_loader, device, dataset, output_folder, evaluate=False, num_batches = -1, batch_size=None):
+def run_predictions_fasterrcnn(model, data_loader, device, dataset, output_folder, evaluate=False, num_batches = -1, batch_size=None, score_threshold=0.5):
     os.makedirs(output_folder, exist_ok=True)
     #model.to(device)
     #model.eval()
@@ -219,7 +219,7 @@ def run_predictions_fasterrcnn(model, data_loader, device, dataset, output_folde
                 # Predictions -> Green
                 for j, box in enumerate(prediction["boxes"]):
                     score = prediction["scores"][j].item()
-                    if score < 0.5:
+                    if score < score_threshold:
                         continue
                     x1, y1, x2, y2 = map(int, box.tolist())
                     label_int = prediction["labels"][j].item()
