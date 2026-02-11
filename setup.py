@@ -19,6 +19,8 @@ setup(
         "torch",
         "torchvision",
         "opencv-python",
+        "matplotlib",
+        "onnx"
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
