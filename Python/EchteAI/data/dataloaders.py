@@ -1,3 +1,6 @@
+from collections import defaultdict
+import json
+
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 import torchvision.transforms as T
@@ -200,7 +203,60 @@ class KittiDataset(Dataset):
     def __len__(self):
         return len(self.imgs)
     
+class CocoDetectionDataset(Dataset):
+    def __init__(self, image_dir, annotation_path, transforms=None):
+        self.image_dir = image_dir
+        self.transforms = transforms
 
+        with open(annotation_path, "r") as f:
+            coco = json.load(f)
+
+        self.images = coco["images"]
+        self.annotations = coco["annotations"]
+        self.categories = coco["categories"]
+
+        self.class_to_idx = {cat["id"]: cat["id"] for cat in self.categories}
+        self.idx_to_class = {cat["id"]: cat["name"] for cat in self.categories}
+
+        self.idx_to_class[0] = "__background__"
+
+        self.ann_map = defaultdict(list)
+        for ann in self.annotations:
+            self.ann_map[ann["image_id"]].append(ann)
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx):
+        img_info = self.images[idx]
+        img_path = os.path.join(self.image_dir, img_info["file_name"])
+
+        img = cv2.imread(img_path)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        anns = self.ann_map[img_info["id"]]
+
+        boxes = []
+        labels = []
+
+        for ann in anns:
+            x, y, w, h = ann["bbox"]
+            boxes.append([x, y, x + w, y + h])
+            labels.append(self.class_to_idx[ann["category_id"]])
+
+        boxes = torch.as_tensor(boxes, dtype=torch.float32)
+        labels = torch.as_tensor(labels, dtype=torch.int64)
+
+        target = {
+            "boxes": boxes,
+            "labels": labels,
+            "image_id": torch.tensor([img_info["id"]])
+        }
+
+        if self.transforms:
+            img = self.transforms(img)
+
+        return img, target
 
 import os
 import shutil
