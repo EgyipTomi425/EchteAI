@@ -8,46 +8,42 @@ import torch.nn.functional as F
 from onnxruntime.quantization import quantize_static, CalibrationDataReader, QuantType
 import logging
 
-class FeatureExtractorCalibrationDataReader(CalibrationDataReader):
-    def __init__(self, data_loader, input_name, input_shape, num_batches):
+class FECalibrationDataReader(CalibrationDataReader):
+    def __init__(self, data_loader, transform, input_name, num_batches=8):
         self.input_name = input_name
-        self.input_shape = input_shape
         self.inputs = []
 
-        bs, c, h, w = input_shape
         count = 0
         for images, _ in data_loader:
             if count >= num_batches:
                 break
-            if len(images) < bs:
-                continue 
-            batch = torch.stack([
-                F.interpolate(img.unsqueeze(0), size=(h, w), mode="bilinear", align_corners=False).squeeze(0)
-                for img in images[:bs]
-            ])
-            self.inputs.append({input_name: batch.numpy()})
+
+            img_list, _ = transform(images)
+            tensors = img_list.tensors
+
+            self.inputs.append({input_name: tensors.cpu().numpy()})
             count += 1
 
-        self.input_iter = iter(self.inputs)
+        self.iterator = iter(self.inputs)
 
     def get_next(self):
-        return next(self.input_iter, None)
+        return next(self.iterator, None)
     
-def quantize_onnx_static(onnx_model_path, data_loader, input_shape=(2, 3, 375, 1242), num_batches=8):
-    model = onnx.load(onnx_model_path)
+def quantize_feature_extractor(fe_onnx_path, data_loader, transform, output_path, num_batches=8):
+    model = onnx.load(fe_onnx_path)
     input_name = model.graph.input[0].name
-    base, ext = os.path.splitext(onnx_model_path)
-    quantized_model_path = base + "_int8" + ext
-    dr = FeatureExtractorCalibrationDataReader(data_loader, input_name, input_shape, num_batches)
+
+    dr = FECalibrationDataReader(data_loader, transform, input_name, num_batches=num_batches)
+
     quantize_static(
-        model_input=onnx_model_path,
-        model_output=quantized_model_path,
+        model_input=fe_onnx_path,
+        model_output=output_path,
         calibration_data_reader=dr,
-        quant_format="QDQ",
         weight_type=QuantType.QInt8,
         activation_type=QuantType.QInt8,
+        quant_format="QDQ",
     )
-    logging.info(f"Quantized model saved successfully: {quantized_model_path}")
+    print(f"FE quantized model saved to: {output_path}")
 
 def onnx_conv_outputs_from_batch(model_path, input_tensor, pattern=r".*conv.*"):
     model = onnx.load(model_path)

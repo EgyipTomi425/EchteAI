@@ -1,6 +1,11 @@
 # https://cocodataset.org/#download
 # Dataset 2017
 
+import warnings
+
+from EchteAI.models.vision.models.onnx_frcnn import quantize_feature_extractor
+warnings.filterwarnings("ignore")
+
 import logging
 import os
 import torch
@@ -8,9 +13,13 @@ import torchvision.transforms as T
 from torch.utils.data import DataLoader, random_split
 
 import EchteAI.data.dataloaders as dl
+from EchteAI.models.vision.models.fasterrcnn_split import ONNXFasterRCNNWrapper, split_save_frcnn
 import EchteAI.models.vision.models.fasterrcnn_utils as frcnn_utils
 
 torch.manual_seed(42)
+
+device = "cuda"#torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 
 def main():
     logging.basicConfig(
@@ -35,12 +44,12 @@ def main():
         "val_fp32"
     )
 
+    model_dir = os.path.join(cwd, "outputs", "models")
+    os.makedirs(model_dir, exist_ok=True)
+
     if not os.path.exists(image_dir):
         logging.error(f"Input image folder not found: {image_dir}")
         return
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
 
     batch_size = 4
 
@@ -72,17 +81,89 @@ def main():
 
     logging.info("Running predictions on original FP32 model...")
 
-    frcnn_utils.run_predictions_fasterrcnn(
-        model=model_fp32,
-        data_loader=val_loader,
-        device=device,
-        dataset=dataset,
-        output_folder=output_dir_fp32,
-        evaluate=False,
-        num_batches=16,
-        score_threshold=0.80
+    if False:
+        frcnn_utils.run_predictions_fasterrcnn(
+            model=model_fp32,
+            data_loader=val_loader,
+            device=device,
+            dataset=dataset,
+            output_folder=output_dir_fp32,
+            evaluate=False,
+            num_batches=16,
+            score_threshold=0.80
+        )
+
+    logging.info("Exporting split FasterRCNN to ONNX...")
+
+    images, _ = next(iter(calib_loader))
+    calib_images = [img.to(device) for img in images]
+
+    if False:
+        split_save_frcnn(
+            model=model_fp32,
+            images=calib_images,
+            device=device,
+            model_dir=model_dir
+        )
+
+    logging.info("ONNX export finished.")
+    fe_onnx_path = os.path.join(model_dir, "feature_extractor.onnx")
+    dh_onnx_path = os.path.join(model_dir, "detector_head.onnx")
+
+    onnx_model = ONNXFasterRCNNWrapper(
+        fe_onnx_path=fe_onnx_path,
+        dh_onnx_path=dh_onnx_path,
+        transform=model_fp32.transform,
+        device=device
     )
 
+    output_dir_onnx_fp32 = os.path.join(
+        cwd,
+        "outputs",
+        "frcnn",
+        "onnx_val_fp32"
+    )
+
+    if False:
+        frcnn_utils.run_predictions_fasterrcnn(
+            model=onnx_model,
+            data_loader=val_loader,
+            device=device,
+            dataset=dataset,
+            output_folder=output_dir_onnx_fp32,
+            evaluate=False,
+            num_batches=16,
+            score_threshold=0.80
+        )
+    
+    if False:
+        quantize_feature_extractor(fe_onnx_path, calib_loader, model_fp32.transform, os.path.join(model_dir, "feature_extractor_quant.onnx"), num_batches=8)
+
+    onnx_model_int8 = ONNXFasterRCNNWrapper(
+        fe_onnx_path=os.path.join(model_dir, "feature_extractor_quant.onnx"),
+        dh_onnx_path=dh_onnx_path,
+        transform=model_fp32.transform,
+        device=device
+    )
+
+    output_dir_onnx_int8 = os.path.join(
+        cwd,
+        "outputs",
+        "frcnn",
+        "onnx_val_int8"
+    )
+
+    if True:
+        frcnn_utils.run_predictions_fasterrcnn(
+            model=onnx_model_int8,
+            data_loader=val_loader,
+            device=device,
+            dataset=dataset,
+            output_folder=output_dir_onnx_int8,
+            evaluate=False,
+            num_batches=16,
+            score_threshold=0.80
+        )
 
 if __name__ == "__main__":
     main()
