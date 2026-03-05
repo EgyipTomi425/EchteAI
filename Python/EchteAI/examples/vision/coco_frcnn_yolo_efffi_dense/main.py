@@ -3,7 +3,10 @@
 
 import warnings
 
-from EchteAI.models.vision.models.onnx_frcnn import quantize_feature_extractor
+import torchvision.utils as vutils
+
+from EchteAI.models.vision.models.onnx_frcnn import onnx_conv_outputs_from_batch, quantize_feature_extractor
+from EchteAI.models.vision.visualization import absolute_differences, compare_models_visual, fit_and_plot_distribution, visualize_cnn_outputs
 warnings.filterwarnings("ignore")
 
 import logging
@@ -96,6 +99,10 @@ def main():
     logging.info("Exporting split FasterRCNN to ONNX...")
 
     images, _ = next(iter(calib_loader))
+    images, _ = next(iter(calib_loader))
+    images, _ = next(iter(calib_loader))
+    images, _ = next(iter(calib_loader))
+    images, _ = next(iter(calib_loader))
     calib_images = [img.to(device) for img in images]
 
     if False:
@@ -139,8 +146,9 @@ def main():
     if False:
         quantize_feature_extractor(fe_onnx_path, calib_loader, model_fp32.transform, os.path.join(model_dir, "feature_extractor_quant.onnx"), num_batches=8)
 
+    quantized_fe_path = os.path.join(model_dir, "feature_extractor_quant.onnx")
     onnx_model_int8 = ONNXFasterRCNNWrapper(
-        fe_onnx_path=os.path.join(model_dir, "feature_extractor_quant.onnx"),
+        fe_onnx_path=os.path.join(quantized_fe_path),
         dh_onnx_path=dh_onnx_path,
         transform=model_fp32.transform,
         device=device
@@ -153,7 +161,7 @@ def main():
         "onnx_val_int8"
     )
 
-    if True:
+    if False:
         frcnn_utils.run_predictions_fasterrcnn(
             model=onnx_model_int8,
             data_loader=val_loader,
@@ -164,6 +172,35 @@ def main():
             num_batches=16,
             score_threshold=0.80
         )
+
+    img = images[0:1]
+    vutils.save_image(img[0],os.path.join(cwd, "outputs","frcnn","val_image.png"))
+
+    fp32_feats=None
+    int8_feats=None
+    if True:
+        fp32_feats = onnx_conv_outputs_from_batch(
+            fe_onnx_path,
+            img,
+            transform=model_fp32.transform,
+            device=device
+        )
+
+        int8_feats = onnx_conv_outputs_from_batch(
+            quantized_fe_path,
+            img,
+            transform=model_fp32.transform,
+            device=device
+        )
+
+        diffs = absolute_differences(fp32_feats, int8_feats)
+        visualize_cnn_outputs(diffs, filename=os.path.join(cwd, "outputs", "frcnn", "feature_differences"))
+        visualize_cnn_outputs(int8_feats, filename=os.path.join(cwd, "outputs", "frcnn", "feature_int8"))
+        
+
+        
+
+
 
 if __name__ == "__main__":
     main()

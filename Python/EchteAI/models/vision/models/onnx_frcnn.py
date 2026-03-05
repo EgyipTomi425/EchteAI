@@ -45,23 +45,40 @@ def quantize_feature_extractor(fe_onnx_path, data_loader, transform, output_path
     )
     print(f"FE quantized model saved to: {output_path}")
 
-def onnx_conv_outputs_from_batch(model_path, input_tensor, pattern=r".*conv.*"):
+def onnx_conv_outputs_from_batch(model_path, images, pattern=r".*conv.*", transform=None, device=None):
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        device = str(device).lower()
+    
+    if transform is not None:
+        img_list, _ = transform(images)
+
+    
+    input_tensor = img_list.tensors.to(device)
+
     model = onnx.load(model_path)
+
     conv_outputs = []
     for node in model.graph.node:
         if node.op_type.lower() == "conv":
             for output in node.output:
                 if re.search(pattern, output, re.IGNORECASE):
                     conv_outputs.append(output)
+
     existing_outputs = [o.name for o in model.graph.output]
     value_infos = {vi.name: vi for vi in model.graph.value_info}
     for name in conv_outputs:
         if name not in existing_outputs and name in value_infos:
             model.graph.output.append(value_infos[name])
+
     export_path = model_path.replace(".onnx", "_with_outputs.onnx")
     onnx.save(model, export_path)
-    session = ort.InferenceSession(export_path, providers=["CPUExecutionProvider"])
+
+    providers = ['CUDAExecutionProvider'] if "cuda" in device else ['CPUExecutionProvider']
+    session = ort.InferenceSession(export_path, providers=providers)
     input_name = session.get_inputs()[0].name
     ort_outputs = session.run(None, {input_name: input_tensor.cpu().numpy()})
     output_names = [o.name for o in session.get_outputs()]
-    return {name: torch.tensor(val) for name, val in zip(output_names, ort_outputs)}
+
+    return {name: torch.tensor(val, device=device) for name, val in zip(output_names, ort_outputs)}
