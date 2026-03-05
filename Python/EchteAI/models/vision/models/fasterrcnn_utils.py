@@ -232,3 +232,73 @@ def run_predictions_fasterrcnn(model, data_loader, device, dataset, output_folde
                 image_bgr = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
                 cv2.imwrite(output_path, image_bgr)
             logging.info(f"Batch {batch_idx} processed in {batch_time:.4f} seconds.")
+
+import torch.nn.functional as F
+
+def resize_and_pad(img, target_size):
+        c, h, w = img.shape
+        scale = min(target_size[0]/h, target_size[1]/w)
+        new_h, new_w = int(h*scale), int(w*scale)
+        img_resized = F.interpolate(img.unsqueeze(0), size=(new_h, new_w), mode='bilinear', align_corners=False).squeeze(0)
+        pad_h = target_size[0] - new_h
+        pad_w = target_size[1] - new_w
+        img_padded = F.pad(img_resized, (0, pad_w, 0, pad_h))
+        return img_padded
+
+def run_predictions_efficientdet(model, data_loader, device, dataset, output_folder, score_threshold=0.5, num_batches=-1, target_size=(512,512)):
+    """
+    EfficientDet predikciók futtatása és mentése képként.
+    Ground-truth boxok nem jelennek meg.
+    """
+    os.makedirs(output_folder, exist_ok=True)
+    model.to(device).eval()
+
+    with torch.no_grad():
+        for batch_idx, (images, _) in enumerate(data_loader):
+            if num_batches > 0 and batch_idx >= num_batches:
+                break
+
+            images_tensor = torch.stack([resize_and_pad(img.to(device), target_size) for img in images])
+
+            start_time = time.time()
+            predictions = model(images_tensor)
+            batch_time = time.time() - start_time
+
+            for i, prediction in enumerate(predictions):
+                image_np = images_tensor[i].mul(255).byte().permute(1,2,0).cpu().numpy()
+                image_np = np.ascontiguousarray(image_np)
+
+                # Predikció -> zöld boxok
+                if isinstance(prediction, torch.Tensor):
+                    if prediction.numel() == 0:
+                        continue
+                    boxes = prediction[:, :4]
+                    scores = prediction[:, 4]
+                    labels = prediction[:, 5].long() if prediction.shape[1] > 5 else torch.zeros_like(scores, dtype=torch.int64)
+                elif isinstance(prediction, dict):
+                    boxes = prediction.get("boxes", [])
+                    scores = prediction.get("scores", [])
+                    labels = prediction.get("labels", [])
+                else:
+                    raise ValueError(f"Unknown prediction format: {type(prediction)}")
+
+                for j in range(len(boxes)):
+                    box = boxes[j].cpu().numpy() if isinstance(boxes[j], torch.Tensor) else np.array(boxes[j])
+                    if len(box) != 4:
+                        continue
+                    x1, y1, x2, y2 = box.astype(int)
+                    score = float(scores[j].item()) if isinstance(scores[j], torch.Tensor) else float(scores[j])
+                    if score < score_threshold:
+                        continue
+                    label_int = int(labels[j].item()) if isinstance(labels[j], torch.Tensor) else int(labels[j])
+                    label_name = dataset.idx_to_class.get(label_int, "Unknown")
+
+                    cv2.rectangle(image_np, (x1, y1), (x2, y2), (0,255,0), 2)
+                    cv2.putText(image_np, f"{label_name}: {score:.2f}", (x1, y1-10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
+
+                output_path = os.path.join(output_folder, f"batch{batch_idx}_img{i}.png")
+                image_bgr = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
+                cv2.imwrite(output_path, image_bgr)
+
+            logging.info(f"Batch {batch_idx} processed in {batch_time:.4f} seconds.")

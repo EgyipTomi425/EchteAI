@@ -3,7 +3,11 @@
 
 import warnings
 
+from EchteAI.models.vision.models.onnx_quant import SingleImageCalibrationReader, quantize_onnx_model_calibdl_int8
 import torchvision.utils as vutils
+import onnxruntime as ort
+import torch.nn.functional as F
+import numpy as np
 
 from EchteAI.models.vision.models.onnx_frcnn import onnx_conv_outputs_from_batch, quantize_feature_extractor
 from EchteAI.models.vision.visualization import absolute_differences, compare_models_visual, fit_and_plot_distribution, visualize_cnn_outputs
@@ -18,6 +22,8 @@ from torch.utils.data import DataLoader, random_split
 import EchteAI.data.dataloaders as dl
 from EchteAI.models.vision.models.fasterrcnn_split import ONNXFasterRCNNWrapper, split_save_frcnn
 import EchteAI.models.vision.models.fasterrcnn_utils as frcnn_utils
+
+from effdet import create_model
 
 torch.manual_seed(42)
 
@@ -54,7 +60,7 @@ def main():
         logging.error(f"Input image folder not found: {image_dir}")
         return
 
-    batch_size = 4
+    batch_size = 1
 
     dataset = dl.CocoDetectionDataset(
         image_dir=image_dir,
@@ -98,7 +104,6 @@ def main():
 
     logging.info("Exporting split FasterRCNN to ONNX...")
 
-    images, _ = next(iter(calib_loader))
     images, _ = next(iter(calib_loader))
     images, _ = next(iter(calib_loader))
     images, _ = next(iter(calib_loader))
@@ -178,7 +183,7 @@ def main():
 
     fp32_feats=None
     int8_feats=None
-    if True:
+    if False:
         fp32_feats = onnx_conv_outputs_from_batch(
             fe_onnx_path,
             img,
@@ -196,11 +201,150 @@ def main():
         diffs = absolute_differences(fp32_feats, int8_feats)
         visualize_cnn_outputs(diffs, filename=os.path.join(cwd, "outputs", "frcnn", "feature_differences"))
         visualize_cnn_outputs(int8_feats, filename=os.path.join(cwd, "outputs", "frcnn", "feature_int8"))
+
+        if False:
+            frcnn_utils.run_predictions_fasterrcnn(
+            model=onnx_model_int8,
+            data_loader=calib_loader,
+            device=device,
+            dataset=dataset,
+            output_folder=output_dir_onnx_int8,
+            evaluate=False,
+            num_batches=8,
+            score_threshold=0.80
+        )
         
+    model_effi_fp32 = create_model(
+        'tf_efficientdet_lite4',
+        bench_task='predict',  # anchor decode + NMS
+        pretrained=True
+    )
+    model_effi_fp32.to(device).eval()
 
-        
+    output_dir_effidet = os.path.join(os.path.dirname(__file__), "outputs", "effidet", "val_images")
+    os.makedirs(output_dir_effidet, exist_ok=True)
 
+    if False:
+        frcnn_utils.run_predictions_efficientdet(
+            model=model_effi_fp32,
+            data_loader=val_loader,
+            device=device,
+            dataset=dataset,
+            output_folder=output_dir_effidet,
+            score_threshold=0.7,
+            num_batches=5,
+            target_size=(640,640)
+        )
 
+        model_path = os.path.join(model_dir, "tf_efficientdet_lite4.pth")
+        torch.save(model_effi_fp32.state_dict(), model_path)
+        print(f"Model saved at: {model_path}")
+
+    import torch
+    from torchvision import models, transforms
+    from PIL import Image
+
+    onnx_path = os.path.join(model_dir, "efficientnet_b0.onnx")
+    if False:
+        model_effi_fp32 = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1)
+        model_effi_fp32.to(device).eval()
+
+        imagenet_classes = models.EfficientNet_B0_Weights.IMAGENET1K_V1.meta["categories"]
+
+        target_size = (224, 224)
+        img_prepared = frcnn_utils.resize_and_pad(img[0].to(device), target_size).unsqueeze(0)
+
+        with torch.no_grad():
+            outputs = model_effi_fp32(img_prepared)
+            probs = F.softmax(outputs, dim=1)
+            conf, idx = torch.max(probs, dim=1)
+
+        predicted_class = imagenet_classes[idx.item()]
+        print(f"Predicted: {predicted_class}, confidence: {conf.item():.4f}")
+
+        dummy_input = torch.randn(1, 3, 224, 224, device=device)
+
+        torch.onnx.export(
+            model_effi_fp32,
+            dummy_input,
+            onnx_path,
+            input_names=['images'],
+            output_names=['logits'],
+            opset_version=17,
+            dynamic_axes={'images': {0: 'batch_size'}, 'logits': {0: 'batch_size'}}
+        )
+
+        print(f"ONNX model exported to {onnx_path}")
+    
+    target_size = (224, 224) 
+    quantized_model_path = os.path.join(model_dir, "efficientnet_b0_quant.onnx")
+    if False:
+        reader = SingleImageCalibrationReader(
+            dataloader=calib_loader,
+            input_name="images",
+            target_size=target_size,
+            device="cuda"
+        )
+
+        quantize_onnx_model_calibdl_int8(
+            model_path=onnx_path,
+            calib_data_loader=reader,
+            quantized_model_path=quantized_model_path
+        )
+    
+    if True:
+        img2 = img[0].to(device)
+
+        target_size = (224, 224)
+        img_prepped = frcnn_utils.resize_and_pad(img2, target_size)
+
+        mean = torch.tensor([0.485, 0.456, 0.406], device=device).view(3,1,1)
+        std = torch.tensor([0.229, 0.224, 0.225], device=device).view(3,1,1)
+        img_prepped = (img_prepped - mean) / std
+
+        img_np = img_prepped.unsqueeze(0).cpu().numpy().astype(np.float32)
+
+        sess = ort.InferenceSession(onnx_path, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+        input_name = sess.get_inputs()[0].name
+        output_name = sess.get_outputs()[0].name
+
+        outputs = sess.run([output_name], {input_name: img_np})
+        logits = torch.tensor(outputs[0])
+
+        probs = torch.softmax(logits, dim=1)
+        conf, idx = torch.max(probs, dim=1)
+
+        imagenet_classes = models.EfficientNet_B0_Weights.IMAGENET1K_V1.meta["categories"]
+        predicted_class = imagenet_classes[idx.item()]
+
+        print(f"Predicted class: {predicted_class}, confidence: {conf.item():.4f}")
+###################
+        img_prepped = frcnn_utils.resize_and_pad(img2, target_size)
+
+        mean = torch.tensor([0.485, 0.456, 0.406], device=device).view(3,1,1)
+        std = torch.tensor([0.229, 0.224, 0.225], device=device).view(3,1,1)
+        img_prepped = (img_prepped - mean) / std
+
+        img_batch = img_prepped.unsqueeze(0)
+
+        fp32_feats = onnx_conv_outputs_from_batch(
+            onnx_path,
+            images=img_batch,
+            pattern = r".*",
+            transform=None,
+            device=device
+        )
+
+        logits = fp32_feats.pop("logits", None)
+        max_vals = fp32_feats.pop("max", None)
+
+        if len(fp32_feats) == 0:
+            print("No CNN feature maps found to visualize.")
+        else:
+            visualize_cnn_outputs(
+                fp32_feats,
+                filename=os.path.join(cwd, "outputs", "frcnn", "fp32_features_effi")
+            )
 
 if __name__ == "__main__":
     main()

@@ -53,9 +53,12 @@ def onnx_conv_outputs_from_batch(model_path, images, pattern=r".*conv.*", transf
     
     if transform is not None:
         img_list, _ = transform(images)
-
-    
-    input_tensor = img_list.tensors.to(device)
+        input_tensor = img_list.tensors.to(device)
+    else:
+        if isinstance(images, list):
+            input_tensor = torch.stack(images).to(device)
+        else:
+            input_tensor = images.to(device)
 
     model = onnx.load(model_path)
 
@@ -67,10 +70,20 @@ def onnx_conv_outputs_from_batch(model_path, images, pattern=r".*conv.*", transf
                     conv_outputs.append(output)
 
     existing_outputs = [o.name for o in model.graph.output]
-    value_infos = {vi.name: vi for vi in model.graph.value_info}
+
+    from onnx import helper, TensorProto
+
     for name in conv_outputs:
-        if name not in existing_outputs and name in value_infos:
-            model.graph.output.append(value_infos[name])
+        if name not in existing_outputs:
+            model.graph.output.append(
+                helper.make_tensor_value_info(name, TensorProto.FLOAT, None)
+            )
+
+    #existing_outputs = [o.name for o in model.graph.output]
+    #value_infos = {vi.name: vi for vi in model.graph.value_info}
+    #for name in conv_outputs:
+    #    if name not in existing_outputs and name in value_infos:
+    #        model.graph.output.append(value_infos[name])
 
     export_path = model_path.replace(".onnx", "_with_outputs.onnx")
     onnx.save(model, export_path)
