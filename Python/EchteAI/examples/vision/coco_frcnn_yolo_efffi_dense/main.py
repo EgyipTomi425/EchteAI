@@ -292,16 +292,12 @@ def main():
             quantized_model_path=quantized_model_path
         )
     
-    if True:
-        img2 = img[0].to(device)
-
-        target_size = (224, 224)
-        img_prepped = frcnn_utils.resize_and_pad(img2, target_size)
-
-        mean = torch.tensor([0.485, 0.456, 0.406], device=device).view(3,1,1)
-        std = torch.tensor([0.229, 0.224, 0.225], device=device).view(3,1,1)
-        img_prepped = (img_prepped - mean) / std
-
+    img2 = img[0].to(device)
+    img_prepped = frcnn_utils.resize_and_pad(img2, target_size)
+    mean = torch.tensor([0.485, 0.456, 0.406], device=device).view(3,1,1)
+    std = torch.tensor([0.229, 0.224, 0.225], device=device).view(3,1,1)
+    img_prepped = (img_prepped - mean) / std
+    if False:
         img_np = img_prepped.unsqueeze(0).cpu().numpy().astype(np.float32)
 
         sess = ort.InferenceSession(onnx_path, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
@@ -344,6 +340,89 @@ def main():
             visualize_cnn_outputs(
                 fp32_feats,
                 filename=os.path.join(cwd, "outputs", "frcnn", "fp32_features_effi")
+            )
+
+    densenet_onnx_path = os.path.join(model_dir, "densenet121.onnx")
+    if True:
+        model = models.densenet121(weights=models.DenseNet121_Weights.IMAGENET1K_V1)
+        model.to(device).eval()
+        imagenet_classes = models.DenseNet121_Weights.IMAGENET1K_V1.meta["categories"]
+        img_batch = img_prepped.unsqueeze(0)
+
+        with torch.no_grad():
+            logits = model(img_batch)
+
+        probs = torch.softmax(logits, dim=1)
+        conf, idx = torch.max(probs, dim=1)
+
+        predicted_class = imagenet_classes[idx.item()]
+        print(predicted_class, conf.item())
+##############################################################################
+        model_dense = models.densenet121(
+            weights=models.DenseNet121_Weights.IMAGENET1K_V1
+        )
+        model_dense.to(device).eval()
+
+        dummy_input = torch.randn(1,3,224,224, device=device)
+
+        torch.onnx.export(
+            model_dense,
+            dummy_input,
+            densenet_onnx_path,
+            input_names=["images"],
+            output_names=["logits"],
+            opset_version=17,
+            dynamic_axes={
+                "images": {0: "batch_size"},
+                "logits": {0: "batch_size"}
+            }
+        )
+
+        print("DenseNet ONNX export ready:", densenet_onnx_path)
+
+        sess = ort.InferenceSession(
+            densenet_onnx_path,
+            providers=["CUDAExecutionProvider","CPUExecutionProvider"]
+        )
+
+        img_np = img_prepped.unsqueeze(0).cpu().numpy().astype(np.float32)
+
+        outputs = sess.run(["logits"], {"images": img_np})
+
+        logits = torch.tensor(outputs[0])
+
+        probs = torch.softmax(logits, dim=1)
+        conf, idx = torch.max(probs, dim=1)
+
+        imagenet_classes = models.DenseNet121_Weights.IMAGENET1K_V1.meta["categories"]
+
+        print("DenseNet prediction:", imagenet_classes[idx.item()], conf.item())
+
+        img_batch = img_prepped.unsqueeze(0)
+
+        dense_feats = onnx_conv_outputs_from_batch(
+            densenet_onnx_path,
+            images=img_batch,
+            pattern=r".*",
+            transform=None,
+            device=device,
+            num_layers=4
+        )
+
+        dense_feats.pop("logits", None)
+        dense_feats.pop("max", None)
+
+        if len(dense_feats) == 0:
+            print("No CNN feature maps found.")
+        else:
+            visualize_cnn_outputs(
+                dense_feats,
+                filename=os.path.join(
+                    cwd,
+                    "outputs",
+                    "frcnn",
+                    "fp32_features_densenet"
+                )
             )
 
 if __name__ == "__main__":
