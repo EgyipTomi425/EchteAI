@@ -106,3 +106,21 @@ class YoloCalibrationDataLoader(CalibrationDataReader):
             return {self.input_name: batch_np}
         else:
             return None
+        
+from torch.utils.data import Dataset
+from PIL import Image
+import torchvision.transforms as T
+
+class ImagePathDataset(Dataset):
+    def __init__(self, paths, transform=None):
+        self.paths = paths
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.paths)
+
+    def __getitem__(self, idx):
+        img = Image.open(self.paths[idx]).convert("RGB")
+        if self.transform:
+            img = self.transform(img)
+        return img, 0
