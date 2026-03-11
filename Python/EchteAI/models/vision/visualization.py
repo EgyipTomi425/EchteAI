@@ -338,9 +338,20 @@ def visualize_onnx_cnn_outputs(model_path, input_tensor, output_folder="outputs"
         cv2.imwrite(output_path, heatmap)
         logging.info(f"Saved heatmap for image {i}: {output_path}")
 
-def absolute_differences(outputs1, outputs2):
+def absolute_differences(outputs1, outputs2, layer=None, num_layers=None):
     abs_diffs = {}
-    for key in outputs1:
+
+    keys = list(outputs1.keys())
+
+    if layer is not None:
+        if layer < 1 or layer > len(keys):
+            raise ValueError(f"Layer index {layer} out of range (1-{len(keys)})")
+        keys = [keys[layer - 1]]
+
+    elif num_layers is not None:
+        keys = keys[:num_layers]
+
+    for key in keys:
         if key in outputs2:
             if outputs1[key].shape == outputs2[key].shape:
                 diff = torch.abs(outputs1[key] - outputs2[key])
@@ -349,6 +360,7 @@ def absolute_differences(outputs1, outputs2):
                 print(f"Shape mismatch at layer '{key}', skipping.")
         else:
             print(f"Layer '{key}' not found in both outputs.")
+
     return abs_diffs
 
 def percentage_differences(outputs1, outputs2):
