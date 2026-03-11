@@ -73,7 +73,6 @@ def onnx_conv_outputs_from_batch(
     model = onnx.load(model_path)
 
     conv_outputs = []
-
     for node in model.graph.node:
         if node.op_type.lower() == "conv":
             for output in node.output:
@@ -90,21 +89,15 @@ def onnx_conv_outputs_from_batch(
 
     if layer is not None:
         if layer < 0 or layer >= len(conv_outputs):
-            raise ValueError(
-                f"layer index {layer} out of range (0-{len(conv_outputs)-1})"
-            )
+            raise ValueError(f"layer index {layer} out of range (0-{len(conv_outputs)-1})")
         conv_outputs = [conv_outputs[layer]]
-
     elif num_layers is not None:
         conv_outputs = conv_outputs[:num_layers]
-
     elif last_n_layers is not None:
         conv_outputs = conv_outputs[-last_n_layers:]
 
     existing_outputs = [o.name for o in model.graph.output]
-
     from onnx import helper, TensorProto
-
     for name in conv_outputs:
         if name not in existing_outputs:
             model.graph.output.append(
@@ -114,26 +107,17 @@ def onnx_conv_outputs_from_batch(
     export_path = model_path.replace(".onnx", "_with_outputs.onnx")
     onnx.save(model, export_path)
 
-    providers = (
-        ['CUDAExecutionProvider']
-        if "cuda" in device
-        else ['CPUExecutionProvider']
-    )
-
+    providers = ['CUDAExecutionProvider'] if "cuda" in device else ['CPUExecutionProvider']
     session = ort.InferenceSession(export_path, providers=providers)
-
     input_name = session.get_inputs()[0].name
 
-    ort_outputs = session.run(
-        None,
-        {input_name: input_tensor.cpu().numpy()}
-    )
-
+    ort_outputs = session.run(None, {input_name: input_tensor.cpu().numpy()})
     output_names = [o.name for o in session.get_outputs()]
 
     outputs = {
         name: torch.tensor(val, device=device)
         for name, val in zip(output_names, ort_outputs)
+        if re.search(pattern, name, re.IGNORECASE)
     }
 
     return outputs
