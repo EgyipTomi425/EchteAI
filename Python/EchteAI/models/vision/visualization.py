@@ -338,6 +338,145 @@ def visualize_onnx_cnn_outputs(model_path, input_tensor, output_folder="outputs"
         cv2.imwrite(output_path, heatmap)
         logging.info(f"Saved heatmap for image {i}: {output_path}")
 
+def fit_and_plot_distribution(outputs1, diffs, output_folder="outputs", filename="distribution_fit",
+                              layer=-1, depth=-1, polyfit=False, scatter=False, per_layer_stats=True):
+    import os
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import FuncFormatter
+
+    os.makedirs(output_folder, exist_ok=True)
+
+    keys = list(outputs1.keys())
+    if layer != -1:
+        selected_keys = [keys[layer - 1]]
+    elif depth != -1:
+        selected_keys = keys[:depth]
+    else:
+        selected_keys = keys
+
+    x_vals = []
+    y_vals = []
+
+    for key in selected_keys:
+        if key in diffs and outputs1[key].shape == diffs[key].shape:
+            base = outputs1[key].flatten().cpu().numpy()
+            diff = diffs[key].flatten().cpu().numpy()
+            x_vals.append(base)
+            y_vals.append(diff)
+
+    if not x_vals or not y_vals:
+        print("No valid layers found to plot.")
+        return
+
+    x_vals = np.concatenate(x_vals)
+    y_vals = np.concatenate(y_vals)
+
+    # -----------------
+    # Polynomial fit / scatter plots
+    # -----------------
+    if polyfit:
+        sort_idx = np.argsort(x_vals)
+        x_sorted = x_vals[sort_idx]
+        y_sorted = y_vals[sort_idx]
+
+        plt.figure(figsize=(6, 6))
+        plt.scatter(x_sorted, y_sorted, s=2, alpha=0.3, color="gray")
+        poly_coeffs = np.polyfit(x_sorted, y_sorted, 10)
+        poly = np.poly1d(poly_coeffs)
+        plt.plot(x_sorted, poly(x_sorted), color="purple", linestyle="--")
+        plt.xlabel("Original activations")
+        plt.ylabel("Difference")
+        plt.title("Polynomial Fit")
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_folder, f"{filename}_polynomial.png"))
+        plt.close()
+
+    if scatter:
+        plt.figure(figsize=(6, 6))
+        plt.scatter(x_vals, y_vals, s=2, alpha=0.3, color="gray")
+        plt.xlabel("Original activations")
+        plt.ylabel("Difference")
+        plt.title("Scatter Plot")
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_folder, f"{filename}_scatter.png"))
+        plt.close()
+
+    # -----------------
+    # Hexbin with symlog transform
+    # -----------------
+    def symlog_transform(arr, linthresh=1e-3):
+        return np.sign(arr) * np.log1p(np.abs(arr) / linthresh)
+
+    linthresh = 1e-3
+    x_hex = symlog_transform(x_vals, linthresh=linthresh)
+    y_hex = symlog_transform(y_vals, linthresh=linthresh)
+
+    plt.figure(figsize=(6, 6))
+    hb = plt.hexbin(x_hex, y_hex, gridsize=50, cmap='Blues', bins='log')
+
+    def symlog_inv(x):
+        return np.sign(x) * linthresh * (np.expm1(np.abs(x)))
+
+    plt.gca().xaxis.set_major_formatter(FuncFormatter(lambda val, _: f"{symlog_inv(val):.3f}"))
+    plt.gca().yaxis.set_major_formatter(FuncFormatter(lambda val, _: f"{symlog_inv(val):.3f}"))
+
+    plt.xlabel("Original activations")
+    plt.ylabel("Difference")
+    plt.title("2D Density Distribution (Hexbin)")
+
+    abs_y = np.abs(y_vals)
+    abs_mean = np.mean(abs_y)
+    abs_median = np.median(abs_y)
+    acc_vals = abs_y / (np.abs(x_vals) + np.finfo(float).tiny)
+    acc_median = np.median(acc_vals)
+
+    stats_text = (
+        f"Abs Mean: {abs_mean:.4f}\n"
+        f"Abs Median: {abs_median:.4f}\n"
+        f"Acc Median: {acc_median:.4f}"
+    )
+    plt.text(0.99, 0.01, stats_text, transform=plt.gca().transAxes,
+             verticalalignment='bottom', horizontalalignment='right',
+             fontsize=10, bbox=dict(facecolor='white', alpha=0.7))
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_folder, f"{filename}_distribution.png"))
+    plt.close()
+
+    # -----------------
+    # Per-layer stats plot (optional)
+    # -----------------
+    if per_layer_stats:
+        abs_mean_list = []
+        abs_median_list = []
+        acc_median_list = []
+        layer_indices = []
+
+        for idx, key in enumerate(selected_keys):
+            if key in diffs and outputs1[key].shape == diffs[key].shape:
+                base = outputs1[key].flatten().cpu().numpy()
+                diff = diffs[key].flatten().cpu().numpy()
+                abs_y_layer = np.abs(diff)
+                acc_layer = abs_y_layer / (np.abs(base) + np.finfo(float).tiny)
+
+                abs_mean_list.append(np.mean(abs_y_layer))
+                abs_median_list.append(np.median(abs_y_layer))
+                acc_median_list.append(np.median(acc_layer))
+                layer_indices.append(idx + 1)
+
+        plt.figure(figsize=(6, 6))
+        plt.plot(layer_indices, abs_mean_list, '-o', label='Abs Mean')
+        plt.plot(layer_indices, abs_median_list, '-s', label='Abs Median')
+        plt.plot(layer_indices, acc_median_list, '-^', label='Acc Median')
+        plt.xlabel("Layer index")
+        plt.ylabel("Value")
+        plt.title("Per-Layer Statistics")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_folder, f"{filename}_per_layer_stats.png"))
+        plt.close()
+
 def absolute_differences(outputs1, outputs2, layer=None, num_layers=None):
     abs_diffs = {}
 
@@ -363,17 +502,37 @@ def absolute_differences(outputs1, outputs2, layer=None, num_layers=None):
 
     return abs_diffs
 
-def percentage_differences(outputs1, outputs2):
+def percentage_differences(outputs1, outputs2, layer=None, num_layers=None):
     percent_diffs = {}
-    for key in outputs1:
+
+    keys = list(outputs1.keys())
+
+    if layer is not None:
+        if layer < 1 or layer > len(keys):
+            raise ValueError(f"Layer index {layer} out of range (1-{len(keys)})")
+        keys = [keys[layer - 1]]
+
+    elif num_layers is not None:
+        keys = keys[:num_layers]
+
+    for key in keys:
         if key in outputs2:
             if outputs1[key].shape == outputs2[key].shape:
+
                 diff = torch.abs(outputs1[key] - outputs2[key])
                 base = torch.abs(outputs1[key])
-                percent = torch.where(base == 0, torch.ones_like(base), diff / base)
+
+                percent = torch.where(
+                    base == 0,
+                    torch.ones_like(base),
+                    diff / base
+                )
+
                 percent_diffs[key] = percent
+
             else:
                 print(f"Shape mismatch at layer '{key}', skipping.")
         else:
             print(f"Layer '{key}' not found in both outputs.")
+
     return percent_diffs
