@@ -36,12 +36,16 @@ SPECS = {
 }
 
 
-def engine_shapes(spec, batch=1):
-    """TensorRT optimization profile {input: (min, opt, max)} for batch-1 analysis engines."""
+def engine_shapes(spec, batch=1, opt_max=False):
+    """TensorRT optimization profile {input: (min, opt, max)} for batch-1 analysis engines.
+
+    opt_max: optimise for the largest shape. Needed for FP8 engines: TensorRT 11.3 FP8 (Myelin) kernels
+    fail at run time for dynamic inputs larger than the optimisation shape."""
     c, h, w = spec.bench_shape
     if spec.dynamic_hw:
         (hmin, hmax), (wmin, wmax) = spec.dynamic_hw
-        return {spec.input_name: ((batch, c, hmin, wmin), (batch, c, h, w), (batch, c, hmax, wmax))}
+        opt = (batch, c, hmax, wmax) if opt_max else (batch, c, h, w)
+        return {spec.input_name: ((batch, c, hmin, wmin), opt, (batch, c, hmax, wmax))}
     return {spec.input_name: ((batch, c, h, w),) * 3}
 
 

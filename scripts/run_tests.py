@@ -92,7 +92,7 @@ def tasks(cfg):
                 [results_dir(cfg, "engines") / f"{m}_fp8_bs1.engine" for m in ("yolov10s", "yolov10x")]))
     # Layer-wise test of the static-scale prediction (Eq. static): SQNR drop of INT8 vs FP8 under contrast
     # reduction c = 0.4 / 0.2 / 0.05 (severities 1 / 3 / 5), same 100 images as the clean analysis.
-    for m in ORDER:     # FP8 layer profile on clean images for the precision spectrum of the propagation figure
+    for m in ORDER:     # FP8 layer profile on clean images (precision spectrum of the propagation figure)
         out.append((f"layers_fp8_clean_{m}", [py, "scripts/06_activations.py", "--models", m, "--quant", "fp8",
                                              "--n", "100"], [debug.engine_path(cfg, m, "fp32", "full")]))
     for m in ("yolov10s", "yolov10x"):

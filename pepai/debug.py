@@ -35,5 +35,6 @@ def ensure_engine(cfg, name, precision, kind):
     path = engine_path(cfg, name, precision, kind)
     if not path.exists():
         build_engine(results_dir(cfg, "onnx") / f"{name}_{precision}.onnx", path,
-                     models.engine_shapes(SPECS[name]), mark_outputs=marked_tensors(cfg, name, precision, kind))
+                     models.engine_shapes(SPECS[name], opt_max=precision == "fp8"),
+                     mark_outputs=marked_tensors(cfg, name, precision, kind))
     return path
