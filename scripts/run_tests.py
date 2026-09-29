@@ -101,6 +101,10 @@ def tasks(cfg):
             out.append((f"layers_contrast_{m}_{sev}",
                         [py, "scripts/06_activations.py", "--models", m, "--quant", "int8fp32", "fp8", "--n", "100",
                          "--condition", "contrast", "--severity", str(sev)], ref))
+    # Clipping mechanism under low contrast: entropy vs max calibration (ablation engines).
+    abl = results_dir(cfg, "ablation")
+    out.append(("calibration_robustness", [py, "scripts/27_calibration_robustness.py"],
+                [abl / f"{m}_{v}_int8_bs1.engine" for m in ("yolov10s", "yolov10x") for v in ("default", "calib_max")]))
     det = results_dir(cfg, "detections")
     out.append(("bootstrap_ci", [py, "scripts/22_bootstrap_ci.py"],
                 [det / f"{m}_fp8.json" for m in DETECTORS]
