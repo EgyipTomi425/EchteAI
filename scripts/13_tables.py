@@ -118,7 +118,7 @@ def table_accuracy_speed(cfg, out):
     ci = pd.read_csv(ci_p).set_index(["model", "precision"]) if ci_p.exists() else None
     bench = pd.read_csv(bench_p).groupby(["model", "precision", "batch"]).median(numeric_only=True)
     body = [r"Model & Precision & Accuracy (\%) & $\Delta$ vs FP32 [95\% CI] & p50 bs1 (ms) & p99 bs1 (ms) & "
-            r"Throughput bs8 (img/s) & Energy bs8 (mJ/img) \\", r"\midrule"]
+            r"Images/s bs8 & mJ/image bs8 \\", r"\midrule"]
     for m in [m for m in ORDER if (m, "fp32") in acc.index]:
         metric = "mAP" if "mAP" in acc.columns and pd.notna(acc.loc[(m, "fp32")].get("mAP")) else "top1"
         ref = acc.loc[(m, "fp32"), metric] * 100
