@@ -688,6 +688,92 @@ def fig_noise_model(cfg, out, n=400_000):
     save(fig, out / "M_noise_model")
 
 
+def fig_pareto(cfg, out):
+    """Accuracy versus batch-8 latency for every format and, where run, the selective-precision variants."""
+    t = results_dir(cfg, "tables")
+    b_p, a_p, s_p = t / "benchmark.csv", t / "accuracy.csv", t / "selective.csv"
+    if not (b_p.exists() and a_p.exists()):
+        return
+    b = pd.read_csv(b_p).query("batch == 8").groupby(["model", "precision"]).graph_p50_ms.median()
+    acc = pd.read_csv(a_p).set_index(["model", "precision"])
+    sel = pd.read_csv(s_p) if s_p.exists() else None
+    models = [m for m in ORDER if (m, "fp32") in acc.index]
+    fig, axes = plt.subplots(1, len(models), figsize=(2.6 * len(models), 2.9), squeeze=False)
+    for ax, m in zip(axes[0], models):
+        metric = "top1" if pd.notna(acc.loc[(m, "fp32")].get("top1")) else "mAP"
+        if sel is not None:
+            for strat, style in (("pepai_iter", "-"), ("pepai", "--")):
+                g = sel[(sel.model == m) & (sel.strategy == strat)].sort_values("k")
+                if strat == "pepai_iter" and not g.empty:
+                    g = pd.concat([sel[(sel.model == m) & (sel.strategy == "pepai") & (sel.k == 0)], g])
+                if len(g) > 1:
+                    ax.plot(g.p50_ms_bs8, 100 * g[metric], style, color=MUTED, linewidth=1.0, marker=".",
+                            markersize=4, zorder=1,
+                            label=("selective INT8 (iterative)" if strat == "pepai_iter" else "selective INT8")
+                            if m == models[0] else None)
+        for prec in ("fp32", "fp16", "int8", "fp8"):
+            if (m, prec) in acc.index and (m, prec) in b.index:
+                ax.scatter(b[(m, prec)], 100 * acc.loc[(m, prec), metric], s=34, color=PRECISION_COLORS[prec], zorder=3,
+                           edgecolor="white", linewidth=0.6, label=PRECISION_LABELS[prec] if m == models[0] else None)
+        ax.set_xscale("log")
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:g}"))
+        ax.set_title(MODEL_LABELS[m].replace(" R50-FPN", ""), fontsize=9)
+        ax.set_xlabel("p50 latency, batch 8 (ms)")
+        if ax is axes[0][0]:
+            ax.set_ylabel("accuracy (%)")
+    fig.legend(*axes[0][0].get_legend_handles_labels(), loc="upper center", ncol=6, fontsize=7,
+               bbox_to_anchor=(0.5, 1.06))
+    fig.tight_layout()
+    save(fig, out / "S_pareto")
+
+
+def fig_qualitative(cfg, out, name="yolov10x", image=336232, settings=(("clean", 0), ("contrast", 4))):
+    """FP32, INT8 and FP8 detections with the head-input deviation map on one traffic scene."""
+    from matplotlib.patches import Rectangle
+    from pepai.agreement import greedy_match
+    d = results_dir(cfg, "qualitative")
+    files = {(c, s_, q): d / f"{name}_{image}_{c}{s_}_{q}.npz" for c, s_ in settings for q in ("int8fp32", "fp8")}
+    if not all(f.exists() for f in files.values()):
+        return
+    fig, axes = plt.subplots(len(settings), 3, figsize=(10.5, 2.55 * len(settings)), squeeze=False)
+    vanish_color = "#e34948"
+    for i, (c, s_) in enumerate(settings):
+        base = np.load(files[(c, s_, "int8fp32")])
+        img = base["image"]
+        gray = img.mean(-1)
+        axes[i][0].imshow(img)
+        for b in base["fp32_boxes"]:
+            axes[i][0].add_patch(Rectangle(b[:2], b[2] - b[0], b[3] - b[1], fill=False, lw=1.0,
+                                           edgecolor=PRECISION_COLORS["fp32"]))
+        axes[i][0].set_title(f"FP32, {'clean' if c == 'clean' else f'low contrast (severity {s_})'}: "
+                             f"{len(base['fp32_boxes'])} detections", fontsize=8, loc="left")
+        for j, q in enumerate(("int8fp32", "fp8"), start=1):
+            z = np.load(files[(c, s_, q)])
+            ax = axes[i][j]
+            ax.imshow(gray, cmap="gray", vmin=0, vmax=255)
+            im = ax.imshow(np.clip(z["deviation"] * 100, 0, 30), cmap=SEQUENTIAL, alpha=0.6, vmin=0, vmax=30)
+            iou, match = greedy_match(z["fp32_boxes"], z["fp32_labels"], z["fp32_scores"], z["q_boxes"], z["q_labels"],
+                                      0.5)
+            for b in z["q_boxes"]:
+                ax.add_patch(Rectangle(b[:2], b[2] - b[0], b[3] - b[1], fill=False, lw=0.9,
+                                       edgecolor=PRECISION_COLORS["int8" if q.startswith("int8") else "fp8"]))
+            vanished = z["fp32_boxes"][iou < 0.5]
+            for b in vanished:
+                ax.add_patch(Rectangle(b[:2], b[2] - b[0], b[3] - b[1], fill=False, lw=1.3, linestyle="--",
+                                       edgecolor=vanish_color))
+            label = "INT8" if q.startswith("int8") else "FP8"
+            ax.set_title(f"{label}: head SQNR {float(z['sqnr_db']):.1f} dB, {len(vanished)} vanished",
+                         fontsize=8, loc="left")
+        for ax in axes[i]:
+            ax.set_axis_off()
+    cb = fig.colorbar(im, ax=axes[:, 1:].ravel().tolist(), fraction=0.02, pad=0.01)
+    cb.set_label("head-input MRE$_{proj}$ (%)", fontsize=7)
+    fig.text(0.5, 0.0, "dashed red: FP32 detections without an INT8/FP8 counterpart (IoU $\\geq$ 0.5, score $\\geq$ 0.3)",
+             ha="center", fontsize=7, color=INK_2)
+    fig.subplots_adjust(wspace=0.03, hspace=0.12, left=0.01, right=0.9, top=0.93, bottom=0.04)
+    save(fig, out / "S_qualitative")
+
+
 def fig_noise_validation(cfg, out):
     """a: effective propagation factor vs relative INT8 accuracy loss; b: head-input SQNR predicted from FP32
     statistics with unit propagation factors (Eq. gammabar) vs measured, for INT8 and FP8."""
@@ -910,6 +996,6 @@ if __name__ == "__main__":
     out = results_dir(cfg, "figures")
     for f in (fig_activation_maps, fig_hexbin, fig_propagation, fig_operator_amplification, fig_speed,
               fig_selective, fig_surface, fig_robustness, fig_risk, fig_aibo, fig_energy_surface,
-              fig_layer_profile, fig_conditions, fig_noise_model, fig_static_scale, fig_noise_validation):
+              fig_layer_profile, fig_conditions, fig_noise_model, fig_static_scale, fig_noise_validation, fig_qualitative, fig_pareto):
         f(cfg, out)
         print("done:", f.__name__, flush=True)

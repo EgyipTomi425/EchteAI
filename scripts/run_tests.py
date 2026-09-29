@@ -105,6 +105,8 @@ def tasks(cfg):
     abl = results_dir(cfg, "ablation")
     out.append(("calibration_robustness", [py, "scripts/27_calibration_robustness.py"],
                 [abl / f"{m}_{v}_int8_bs1.engine" for m in ("yolov10s", "yolov10x") for v in ("default", "calib_max")]))
+    out.append(("qualitative", [py, "scripts/28_qualitative.py"],
+                [debug.engine_path(cfg, "yolov10x", "fp32", "final"), coco_c / "contrast" / ".complete"]))
     det = results_dir(cfg, "detections")
     out.append(("bootstrap_ci", [py, "scripts/22_bootstrap_ci.py"],
                 [det / f"{m}_fp8.json" for m in DETECTORS]

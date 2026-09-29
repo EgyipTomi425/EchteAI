@@ -72,6 +72,7 @@ randomness is seeded from it.
 | Closed-form batch-normalisation gain vs measurement | `25_bn_amplification.py` | `tables/bn_amplification.csv` |
 | Injected noise per quantizer from FP32 statistics (INT8/FP8, optionally corrupted inputs) | `26_quantizer_snr.py` | `tables/quantizer_snr*.csv` |
 | Entropy vs max calibration under reduced contrast | `27_calibration_robustness.py` | `tables/calibration_robustness.csv` |
+| Qualitative example (detections and deviation map) | `28_qualitative.py` | `qualitative/` |
 
 ### Running everything
 
