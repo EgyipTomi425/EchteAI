@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "echteai"
+version = "1.0.0"
+description = "PEP-AI: precise, explainable and provable validation of post-training quantized CNNs on GPUs (TensorRT)"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Tamás Menyhárt", email = "tomi04252002@gmail.com" }]
+requires-python = ">=3.12"
+
+[project.urls]
+Repository = "https://github.com/EgyipTomi425/EchteAI"
+
+[tool.setuptools]
+packages = ["pepai"]
