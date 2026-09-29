@@ -688,6 +688,66 @@ def fig_noise_model(cfg, out, n=400_000):
     save(fig, out / "M_noise_model")
 
 
+def fig_noise_validation(cfg, out):
+    """a: effective propagation factor vs relative INT8 accuracy loss; b: head-input SQNR predicted from FP32
+    statistics with unit propagation factors (Eq. gammabar) vs measured, for INT8 and FP8."""
+    t = results_dir(cfg, "tables")
+    pf_p, acc_p = t / "propagation_factor.csv", t / "accuracy.csv"
+    if not (pf_p.exists() and acc_p.exists()):
+        return
+    pf = pd.read_csv(pf_p).set_index("model")
+    acc = pd.read_csv(acc_p).set_index(["model", "precision"])
+    fp8_p = t / "quantizer_snr_fp8_summary.csv"
+    fp8 = pd.read_csv(fp8_p).set_index("model") if fp8_p.exists() else None
+    act = results_dir(cfg, "activations")
+    fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(9.0, 3.5))
+    for m in [m for m in ORDER if m in pf.index]:
+        metric = "top1" if pd.notna(acc.loc[(m, "fp32")].get("top1")) else "mAP"
+        loss = 100 * (acc.loc[(m, "fp32"), metric] - acc.loc[(m, "int8"), metric]) / acc.loc[(m, "fp32"), metric]
+        g = pf.loc[m, "gamma_bar"]
+        ax_a.scatter(g, loss, s=36, color=PRECISION_COLORS["int8"], zorder=3, edgecolor="white", linewidth=0.6)
+        ax_a.annotate(MODEL_LABELS[m].replace(" R50-FPN", ""), (g, loss), textcoords="offset points", xytext=(6, -3),
+                      fontsize=7, color=INK_2)
+        ax_b.scatter(pf.loc[m, "sqnr_add_db"], pf.loc[m, "sqnr_head_db"], s=36, color=PRECISION_COLORS["int8"],
+                     zorder=3, edgecolor="white", linewidth=0.6, label="INT8" if m == ORDER[0] else None)
+        ax_b.annotate(MODEL_LABELS[m].replace(" R50-FPN", ""), (pf.loc[m, "sqnr_add_db"], pf.loc[m, "sqnr_head_db"]),
+                      textcoords="offset points", xytext=(5, -9), fontsize=6.5, color=INK_2)
+        f8 = act / f"{m}_fp8.csv.gz"
+        if fp8 is not None and m in fp8.index and f8.exists():
+            df = load_activation_table(f8)
+            meas = df[df.final].groupby("image").sqnr_db.mean().median()
+            ax_b.scatter(fp8.loc[m, "additive_gamma1_sqnr_db"], meas, s=36, marker="s", color=PRECISION_COLORS["fp8"],
+                         zorder=3, edgecolor="white", linewidth=0.6, label="FP8" if m == ORDER[0] else None)
+    from matplotlib.ticker import FixedLocator, NullFormatter
+    ax_a.set_xscale("log")
+    ax_a.set_xlim(0.1, 4)
+    ax_a.xaxis.set_major_locator(FixedLocator([0.1, 0.2, 0.5, 1, 2]))
+    ax_a.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:g}"))
+    ax_a.xaxis.set_minor_formatter(NullFormatter())
+    ax_a.axvline(1.0, color=MUTED, linewidth=0.8, linestyle="--")
+    ax_a.annotate("attenuating", (0.95, 0.03), xycoords=("data", "axes fraction"), ha="right", fontsize=7, color=INK_2)
+    ax_a.annotate("amplifying", (1.05, 0.03), xycoords=("data", "axes fraction"), ha="left", fontsize=7, color=INK_2)
+    ax_a.set_xlabel(r"effective propagation factor $\bar\Gamma$")
+    ax_a.set_ylabel("relative INT8 accuracy loss (%)")
+    ax_a.set_yscale("log")
+    ax_a.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:g}"))
+    ax_a.set_title("a  attenuating vs amplifying networks", loc="left")
+    lim = [-3, 25]
+    ax_b.plot(lim, lim, color=MUTED, linewidth=0.8, linestyle=":")
+    for k, lab in ((10, "10 dB"),):
+        ax_b.plot(lim, [v + k for v in lim], color=GRID_LINE, linewidth=0.8)
+        ax_b.plot(lim, [v - k for v in lim], color=GRID_LINE, linewidth=0.8)
+    ax_b.annotate("$\\pm$10 dB", (18, 28.5 - 3), fontsize=6.5, color=MUTED)
+    ax_b.set_xlim(*lim)
+    ax_b.set_ylim(*lim)
+    ax_b.set_xlabel("predicted from FP32 statistics, $\\bar\\Gamma=1$ (dB)")
+    ax_b.set_ylabel("measured head-input SQNR (dB)")
+    ax_b.set_title("b  additive model of Proposition 1", loc="left")
+    ax_b.legend(fontsize=7, loc="upper left")
+    fig.tight_layout()
+    save(fig, out / "S_noise_validation")
+
+
 CONTRAST_FACTORS = {1: 0.4, 2: 0.3, 3: 0.2, 4: 0.1, 5: 0.05}     # imagecorruptions contrast()
 
 
@@ -850,6 +910,6 @@ if __name__ == "__main__":
     out = results_dir(cfg, "figures")
     for f in (fig_activation_maps, fig_hexbin, fig_propagation, fig_operator_amplification, fig_speed,
               fig_selective, fig_surface, fig_robustness, fig_risk, fig_aibo, fig_energy_surface,
-              fig_layer_profile, fig_conditions, fig_noise_model, fig_static_scale):
+              fig_layer_profile, fig_conditions, fig_noise_model, fig_static_scale, fig_noise_validation):
         f(cfg, out)
         print("done:", f.__name__, flush=True)
