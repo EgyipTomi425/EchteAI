@@ -82,7 +82,7 @@ def tasks(cfg):
                     [results_dir(cfg, "tables") / "quantizer_snr.csv"]))
     out.append(("localization", [py, "scripts/16_localization.py"],
                 [results_dir(cfg, "risk") / f"{m}_int8fp32.csv" for m in DETECTORS]))
-    for m in ORDER:   # Hopper FP8 extension
+    for m in ORDER:   # Hopper FP8 extension (Faster R-CNN FP8 dyn engine: optimisation shape = max, see 03)
         out.append((f"accuracy_fp8_{m}", [py, "scripts/05_accuracy.py", "--models", m, "--precisions", "fp8"],
                      std_engines(cfg, m, ["fp8"])))
     # Noise-model prediction: FP8 keeps a constant relative precision, so unlike static per-tensor INT8

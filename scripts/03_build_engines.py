@@ -20,6 +20,11 @@ def engine_jobs(cfg, models, precisions):
                 (hmin, hmax), (wmin, wmax) = spec.dynamic_hw
                 c, h, w = spec.bench_shape
                 shapes = ((1, c, hmin, wmin), (1, c, h, w), (1, c, hmax, wmax))
+                if precision == "fp8":
+                    # TensorRT 11.3 FP8 (Myelin) kernels fail at run time for inputs larger than the
+                    # optimisation shape (20 of the 55 COCO input shapes of Faster R-CNN); optimising for
+                    # the largest shape avoids this. Accuracy does not depend on the optimisation shape.
+                    shapes = (shapes[0], shapes[2], shapes[2])
                 yield name, precision, "dyn", onnx_path, {spec.input_name: shapes}
 
 
