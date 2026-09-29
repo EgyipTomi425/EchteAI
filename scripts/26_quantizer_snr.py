@@ -17,6 +17,7 @@ import argparse
 import numpy as np
 import onnx
 import onnxruntime as ort
+import torch
 import pandas as pd
 from onnx import numpy_helper
 from scipy.stats import spearmanr
@@ -69,15 +70,20 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--models", nargs="*", default=ORDER)
     ap.add_argument("--n", type=int, default=32)
+    ap.add_argument("--format", choices=["int8", "fp8"], default="int8",
+                    help="int8: scales of the INT8 graph; fp8: scales of the FP8 (E4M3) graph")
     args = ap.parse_args()
     cfg = load_config()
     onnx_dir, act_dir = results_dir(cfg, "onnx"), results_dir(cfg, "activations")
-    out_p, sum_p = results_dir(cfg, "tables") / "quantizer_snr.csv", results_dir(cfg, "tables") / "quantizer_snr_summary.csv"
+    sfx = "" if args.format == "int8" else "_fp8"
+    qmax = 127 if args.format == "int8" else 448        # largest representable multiple of the scale
+    out_p = results_dir(cfg, "tables") / f"quantizer_snr{sfx}.csv"
+    sum_p = results_dir(cfg, "tables") / f"quantizer_snr{sfx}_summary.csv"
     rows = [r for r in (pd.read_csv(out_p).to_dict("records") if out_p.exists() else []) if r["model"] not in args.models]
     summary = [r for r in (pd.read_csv(sum_p).to_dict("records") if sum_p.exists() else [])
                if r["model"] not in args.models]
     for name in args.models:
-        quantizers = activation_quantizers(onnx_dir / f"{name}_int8fp32.onnx")
+        quantizers = activation_quantizers(onnx_dir / f"{name}_{'int8fp32' if args.format == 'int8' else 'fp8'}.onnx")
         model = onnx.load(str(onnx_dir / f"{name}_fp32.onnx"))
         graph_inputs = {i.name for i in model.graph.input}
         produced = {o for node in model.graph.node for o in node.output}
@@ -96,12 +102,15 @@ if __name__ == "__main__":
             for t, v in outs.items():
                 v = v.astype(np.float64)
                 s = quantizers[t][0]
-                q = np.clip(np.round(v / s), -127, 127) * s
+                if args.format == "int8":
+                    q = np.clip(np.round(v / s), -127, 127) * s
+                else:                   # saturating E4M3 rounding, as QuantizeLinear(saturate=1)
+                    q = torch.from_numpy(np.clip(v / s, -448, 448)).to(torch.float8_e4m3fn).double().numpy() * s
                 a = acc[t]
                 a["x2"] += float(np.sum(v ** 2))
                 a["e2"] += float(np.sum((q - v) ** 2))
                 a["n"] += v.size
-                a["clip"] += int(np.sum(np.abs(v) > 127 * s))
+                a["clip"] += int(np.sum(np.abs(v) > qmax * s))
                 dead = (np.abs(v) < s / 2) & (v != 0)            # non-zero values rounded to zero
                 a["dz_n"] += int(dead.sum())
                 a["dz_x2"] += float(np.sum(v[dead] ** 2))
@@ -112,14 +121,15 @@ if __name__ == "__main__":
             s, users = quantizers[t]
             rms = np.sqrt(a["x2"] / a["n"])
             ch = np.mean(a["ch"], axis=0) if a["ch"] else None
-            kappa = 127 * s / max(rms, 1e-12)
+            kappa = qmax * s / max(rms, 1e-12)
             # Channel-normalised prediction: after a depthwise convolution with folded batch normalisation the
             # output channels carry comparable power, so the SQNR is set by the mean of (alpha / sigma_c)^2.
             sqnr_ch = (10 * np.log10(12 * 127 ** 2) - 10 * np.log10(np.mean((127 * s / np.maximum(ch, 1e-12)) ** 2))
                        if ch is not None else np.nan)
             rows.append({"model": name, "tensor": t, "consumers": ";".join(users), "scale": s, "rms": rms,
                          "sqnr_channel_pred_db": sqnr_ch,
-                         "kappa": kappa, "sqnr_pred_db": 10 * np.log10(12 * 127 ** 2) - 20 * np.log10(kappa),
+                         "kappa": kappa, "sqnr_pred_db": (10 * np.log10(12 * 127 ** 2) - 20 * np.log10(kappa)
+                                                          if args.format == "int8" else -10 * np.log10(0.180 * 2.0 ** -8)),
                          "sqnr_inj_db": 10 * np.log10(a["x2"] / max(a["e2"], 1e-30)),
                          "clip_share": a["clip"] / a["n"],
                          "deadzone_share": a["dz_n"] / a["n"], "deadzone_energy_share": a["dz_x2"] / max(a["x2"], 1e-30),
