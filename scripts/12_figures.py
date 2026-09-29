@@ -690,6 +690,7 @@ def fig_noise_model(cfg, out, n=400_000):
 
 def fig_pareto(cfg, out):
     """Accuracy versus batch-8 latency for every format and, where run, the selective-precision variants."""
+    from matplotlib.ticker import LogLocator, NullFormatter
     t = results_dir(cfg, "tables")
     b_p, a_p, s_p = t / "benchmark.csv", t / "accuracy.csv", t / "selective.csv"
     if not (b_p.exists() and a_p.exists()):
@@ -709,20 +710,25 @@ def fig_pareto(cfg, out):
                 if len(g) > 1:
                     ax.plot(g.p50_ms_bs8, 100 * g[metric], style, color=MUTED, linewidth=1.0, marker=".",
                             markersize=4, zorder=1,
-                            label=("selective INT8 (iterative)" if strat == "pepai_iter" else "selective INT8")
-                            if m == models[0] else None)
+)
         for prec in ("fp32", "fp16", "int8", "fp8"):
             if (m, prec) in acc.index and (m, prec) in b.index:
                 ax.scatter(b[(m, prec)], 100 * acc.loc[(m, prec), metric], s=34, color=PRECISION_COLORS[prec], zorder=3,
-                           edgecolor="white", linewidth=0.6, label=PRECISION_LABELS[prec] if m == models[0] else None)
+                           edgecolor="white", linewidth=0.6)
         ax.set_xscale("log")
+        ax.xaxis.set_major_locator(LogLocator(base=10, subs=(1, 2, 5)))
         ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:g}"))
+        ax.xaxis.set_minor_formatter(NullFormatter())
         ax.set_title(MODEL_LABELS[m].replace(" R50-FPN", ""), fontsize=9)
         ax.set_xlabel("p50 latency, batch 8 (ms)")
         if ax is axes[0][0]:
             ax.set_ylabel("accuracy (%)")
-    fig.legend(*axes[0][0].get_legend_handles_labels(), loc="upper center", ncol=6, fontsize=7,
-               bbox_to_anchor=(0.5, 1.06))
+    from matplotlib.lines import Line2D
+    handles = [Line2D([], [], marker="o", linestyle="none", markersize=6, markerfacecolor=PRECISION_COLORS[p_],
+                      markeredgecolor="white", label=PRECISION_LABELS[p_]) for p_ in ("fp32", "fp16", "int8", "fp8")]
+    handles += [Line2D([], [], color=MUTED, linestyle="--", marker=".", label="selective INT8, one-shot"),
+                Line2D([], [], color=MUTED, linestyle="-", marker=".", label="selective INT8, iterative")]
+    fig.legend(handles=handles, loc="upper center", ncol=6, fontsize=7, bbox_to_anchor=(0.5, 1.07))
     fig.tight_layout()
     save(fig, out / "S_pareto")
 
