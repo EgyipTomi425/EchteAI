@@ -131,10 +131,10 @@ def table_accuracy_speed(cfg, out):
             b8 = bench.loc[(m, p, 8)] if (m, p, 8) in bench.index else None
             delta = "--"
             if p != "fp32":
-                delta = signed(a - ref)
+                delta = signed(a - ref, 2)
                 if ci is not None and (m, p) in ci.index:
                     r = ci.loc[(m, p)]
-                    delta += f" [{signed(100 * r.delta_lo)}, {signed(100 * r.delta_hi)}]"
+                    delta += f" [{signed(100 * r.delta_lo, 2)}, {signed(100 * r.delta_hi, 2)}]"
             name = MODEL_LABELS[m] if first else ""
             first = False
             body.append(
@@ -142,7 +142,7 @@ def table_accuracy_speed(cfg, out):
                 f"{fmt(b1.graph_p50_ms if b1 is not None else None, 2)} & "
                 f"{fmt(b1.graph_p99_ms if b1 is not None else None, 2)} & "
                 f"{fmt(b8.graph_throughput_img_s if b8 is not None else None, 0)} & "
-                f"{fmt(b8.energy_j_per_img * 1000 if b8 is not None else None, 2)} \\\\")
+                f"{sig(b8.energy_j_per_img * 1000) if b8 is not None else '--'} \\\\")
         body.append(r"\midrule")
     body = body[:-1]
     write(out / "R1_accuracy_speed.tex", body, "llrlrrrr",
