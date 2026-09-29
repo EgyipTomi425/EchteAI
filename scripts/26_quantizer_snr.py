@@ -53,8 +53,9 @@ def activation_quantizers(int8_onnx):
     return out
 
 
-def inputs(cfg, name, n):
-    """Preprocessed analysis inputs on the CPU (same images as the activation analysis)."""
+def inputs(cfg, name, n, condition=None, severity=None):
+    """Preprocessed analysis inputs on the CPU (same images as the activation analysis); detectors can
+    read the corrupted copies of the same images (08_robustness.py)."""
     if SPECS[name].task == "cls":
         _, items = data.imagenetv2_split(cfg)
         return [models.classifier_preprocess(data.load_rgb(p)).unsqueeze(0).numpy() for p, _ in items[:n]]
@@ -63,19 +64,23 @@ def inputs(cfg, name, n):
         frcnn = models.load_frcnn()
         return [models.frcnn_preprocess(frcnn, [data.load_rgb(data.coco_val_path(cfg, coco, i))], device="cpu").tensors.numpy()
                 for i in ids]
-    return [models.letterbox(data.load_rgb(data.coco_val_path(cfg, coco, i)))[0].unsqueeze(0).numpy() for i in ids]
+    path = ((lambda i: cfg["coco"]["root"] / "coco_c" / condition / str(severity) / f"{i}.png") if condition
+            else (lambda i: data.coco_val_path(cfg, coco, i)))
+    return [models.letterbox(data.load_rgb(path(i)))[0].unsqueeze(0).numpy() for i in ids]
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--models", nargs="*", default=ORDER)
     ap.add_argument("--n", type=int, default=32)
+    ap.add_argument("--condition", help="corrupted inputs (detectors), e.g. contrast")
+    ap.add_argument("--severity", type=int)
     ap.add_argument("--format", choices=["int8", "fp8"], default="int8",
                     help="int8: scales of the INT8 graph; fp8: scales of the FP8 (E4M3) graph")
     args = ap.parse_args()
     cfg = load_config()
     onnx_dir, act_dir = results_dir(cfg, "onnx"), results_dir(cfg, "activations")
-    sfx = "" if args.format == "int8" else "_fp8"
+    sfx = ("" if args.format == "int8" else "_fp8") + (f"_{args.condition}{args.severity}" if args.condition else "")
     qmax = 127 if args.format == "int8" else 448        # largest representable multiple of the scale
     out_p = results_dir(cfg, "tables") / f"quantizer_snr{sfx}.csv"
     sum_p = results_dir(cfg, "tables") / f"quantizer_snr{sfx}_summary.csv"
@@ -96,7 +101,7 @@ if __name__ == "__main__":
         sess = ort.InferenceSession(model.SerializeToString(), opts, providers=["CPUExecutionProvider"])
         input_name = sess.get_inputs()[0].name
         acc = {t: {"x2": 0.0, "e2": 0.0, "n": 0, "clip": 0, "ch": [], "dz_n": 0, "dz_x2": 0.0} for t in names}
-        for x in inputs(cfg, name, args.n):
+        for x in inputs(cfg, name, args.n, args.condition, args.severity):
             outs = dict(zip(fetched, sess.run(fetched, {input_name: x.astype(np.float32)})))
             outs.update({t: x for t in names if t in graph_inputs})
             for t, v in outs.items():

@@ -711,27 +711,57 @@ def static_scale_table(cfg, name, quant, severities=(1, 3, 5)):
     return out
 
 
+def predicted_injected_change(cfg, name, fmt, severity):
+    """Per consuming convolution (forward order): change of the injected SQNR of its input quantizer under
+    contrast reduction, computed exactly from FP32 activations and the calibrated scales (26_quantizer_snr)."""
+    t = results_dir(cfg, "tables")
+    sfx = "" if fmt == "int8fp32" else "_fp8"
+    base_p, cond_p = t / f"quantizer_snr{sfx}.csv", t / f"quantizer_snr{sfx}_contrast{severity}.csv"
+    if not (base_p.exists() and cond_p.exists()):
+        return None
+    base = pd.read_csv(base_p).query("model == @name").set_index("tensor")
+    cond = pd.read_csv(cond_p).query("model == @name").set_index("tensor")
+    d = (cond.sqnr_inj_db - base.sqnr_inj_db).dropna()
+    infos = json.loads((results_dir(cfg, "activations") / f"{name}_int8fp32_tensors.json").read_text())
+    order = {i["node"]: i["order"] for i in infos}
+    rows = []
+    for tensor, delta in d.items():
+        for u in str(base.loc[tensor, "consumers"]).split(";"):
+            if u in order:
+                rows.append({"order": order[u], "delta": delta})
+    return pd.DataFrame(rows).groupby("order").delta.min() if rows else None
+
+
 def fig_static_scale(cfg, out, models=("yolov10s", "yolov10x"), severities=(1, 3, 5)):
-    """Layer-wise test of Eq. (static): SQNR change under contrast reduction for INT8 and FP8."""
+    """Test of Eq. (static): SQNR change under contrast reduction, measured layer by layer (cumulative
+    deviation, solid) and predicted for the noise injected at each layer's input quantizer (markers)."""
     from matplotlib import colormaps
     tabs = {(m, q): static_scale_table(cfg, m, q, severities) for m in models for q in ("int8fp32", "fp8")}
-    if any(t is None for t in tabs.values()):
+    models = [m for m in models if tabs[(m, "int8fp32")] is not None and tabs[(m, "fp8")] is not None]
+    if not models:
         return
     shades = colormaps[SEQUENTIAL](np.linspace(0.45, 0.95, len(severities)))
-    fig, axes = plt.subplots(len(models), 2, figsize=(9.0, 2.7 * len(models)), sharey=True, squeeze=False)
+    fig, axes = plt.subplots(len(models), 2, figsize=(9.0, 2.8 * len(models)), sharey=True, squeeze=False)
     rows = []
     for i, m in enumerate(models):
         for j, q in enumerate(("int8fp32", "fp8")):
             ax, t = axes[i][j], tabs[(m, q)]
-            for k, s in enumerate(severities):
-                c = CONTRAST_FACTORS[s]
-                ax.plot(t.layer, t[f"d{s}"], color=shades[k], linewidth=1.2,
-                        label=f"severity {s} (c = {c:g})" if (i, j) == (0, 0) else None)
-                ax.axhline(20 * np.log10(c), color=shades[k], linewidth=0.8, linestyle="--")
-                first = t[f"d{s}"].iloc[: max(1, len(t) // 10)].median()
-                rows.append({"model": m, "precision": q, "severity": s, "predicted_db": 20 * np.log10(c),
-                             "first_decile_db": first, "median_db": t[f"d{s}"].median(),
-                             "last_decile_db": t[f"d{s}"].iloc[-max(1, len(t) // 10):].median()})
+            layer_of = dict(zip(t.order, t.layer))
+            for k, s_ in enumerate(severities):
+                ax.plot(t.layer, t[f"d{s_}"], color=shades[k], linewidth=1.2,
+                        label=f"severity {s_} ($c_{{pix}}$ = {CONTRAST_FACTORS[s_]:g})" if (i, j) == (0, 0) else None)
+                pred = predicted_injected_change(cfg, m, q, s_)
+                if pred is not None:
+                    xs = [layer_of[o] for o in pred.index if o in layer_of]
+                    ys = [v for o, v in pred.items() if o in layer_of]
+                    ax.plot(xs, ys, "o", color=shades[k], markersize=2.5, alpha=0.8)
+                    rows.append({"model": m, "precision": q, "severity": s_, "pred_injected_median_db": np.median(ys),
+                                 "pred_injected_min_db": np.min(ys)})
+                n10 = max(1, len(t) // 10)
+                rows.append({"model": m, "precision": q, "severity": s_,
+                             "measured_first_decile_db": t[f"d{s_}"].iloc[:n10].median(),
+                             "measured_median_db": t[f"d{s_}"].median(),
+                             "measured_last_decile_db": t[f"d{s_}"].iloc[-n10:].median()})
             ax.axhline(0, color=MUTED, linewidth=0.8)
             ax.set_title(f"{'abcd'[2 * i + j]}  {MODEL_LABELS[m]}, {'INT8' if q.startswith('int8') else 'FP8'}",
                          loc="left")
@@ -740,8 +770,10 @@ def fig_static_scale(cfg, out, models=("yolov10s", "yolov10x"), severities=(1, 3
             if i == len(models) - 1:
                 ax.set_xlabel("convolution index (forward order)")
             ax.grid(axis="x", visible=False)
-    axes[0][0].legend(fontsize=7, loc="lower right")
-    fig.text(0.5, -0.01, "dashed: prediction $20\\log_{10}c$ of Eq. (static) for a static INT8 scale",
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=len(severities), fontsize=7, bbox_to_anchor=(0.5, 1.04))
+    fig.text(0.5, -0.01, "lines: measured change of the layer SQNR (cumulative deviation); markers: predicted change of "
+             "the noise injected at the layer input (Eq. static with the measured activation attenuation)",
              ha="center", fontsize=7, color=INK_2)
     fig.tight_layout()
     pd.DataFrame(rows).to_csv(results_dir(cfg, "tables") / "static_scale.csv", index=False)
