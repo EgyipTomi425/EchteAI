@@ -1,1 +1,0 @@
-PYTHONUNBUFFERED=1 python3 main.py 2>&1 | tee -a a.log
