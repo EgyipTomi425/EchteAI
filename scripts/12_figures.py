@@ -688,6 +688,58 @@ def fig_noise_model(cfg, out, n=400_000):
     save(fig, out / "M_noise_model")
 
 
+def recursion_fit(cfg, name, quant):
+    """Least-squares fit of r_n^2 = g^2 r_{n-1}^2 + rho^2 over consecutive convolutions (forward order), using the
+    median relative L2 error of every convolution output; returns (g, rho, r_prev^2, r_next^2, measured plateau)."""
+    f = results_dir(cfg, "activations") / f"{name}_{quant}.csv.gz"
+    if not f.exists():
+        return None
+    df = load_activation_table(f, usecols=["image", "tensor", "op", "order", "rel_l2"])
+    r2 = df[df.op == "Conv"].groupby("order").rel_l2.median().sort_index().values ** 2
+    x, y = r2[:-1], r2[1:]
+    (g2, rho2), *_ = np.linalg.lstsq(np.c_[x, np.ones_like(x)], y, rcond=None)
+    r2_fit = 1 - np.sum((y - (g2 * x + rho2)) ** 2) / np.sum((y - y.mean()) ** 2)
+    return {"g": float(np.sqrt(max(g2, 0))), "rho": float(np.sqrt(max(rho2, 0))), "r2": float(r2_fit), "x": x, "y": y,
+            "plateau_db": float(-10 * np.log10(rho2 / (1 - g2))) if 0 <= g2 < 1 and rho2 > 0 else np.nan,
+            "measured_db": float(-10 * np.log10(np.median(r2[len(r2) // 2:])))}
+
+
+def fig_recursion(cfg, out, models=("frcnn_r50_fpn", "yolov10s", "yolov10x")):
+    """Proposition 2: layer-to-layer map of the relative error power, fitted contraction and fixed point."""
+    fits = {(m, q): recursion_fit(cfg, m, q) for m in models for q in ("int8fp32", "fp8")}
+    if any(v is None for v in fits.values()):
+        return
+    fig, axes = plt.subplots(1, len(models), figsize=(3.2 * len(models), 3.1), squeeze=False)
+    rows = []
+    for ax, m in zip(axes[0], models):
+        lo = min(np.percentile(np.r_[fits[(m, q)]["x"], fits[(m, q)]["y"]], 3) for q in ("int8fp32", "fp8")) / 3
+        hi = max(max(fits[(m, q)]["x"].max(), fits[(m, q)]["y"].max()) for q in ("int8fp32", "fp8")) * 1.5
+        grid = np.geomspace(lo, hi, 100)
+        ax.set_xlim(lo, hi)
+        ax.set_ylim(lo, hi)
+        ax.plot(grid, grid, color=MUTED, linewidth=0.8, linestyle=":")
+        for q, key in (("int8fp32", "int8"), ("fp8", "fp8")):
+            fz = fits[(m, q)]
+            ax.scatter(fz["x"], fz["y"], s=7, color=PRECISION_COLORS[key], alpha=0.55, linewidth=0)
+            ax.plot(grid, fz["g"] ** 2 * grid + fz["rho"] ** 2, color=PRECISION_COLORS[key], linewidth=1.3,
+                    label=f"{PRECISION_LABELS[key]}: g = {fz['g']:.2f}, $R^2$ = {fz['r2']:.2f}")
+            if np.isfinite(fz["plateau_db"]):
+                rinf = 10 ** (-fz["plateau_db"] / 10)
+                ax.scatter([rinf], [rinf], s=40, marker="*", color=PRECISION_COLORS[key], edgecolor=INK_2, linewidth=0.5,
+                           zorder=4)
+            rows.append({"model": m, "precision": q, **{k: v for k, v in fz.items() if k not in ("x", "y")}})
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlabel("$r_{n-1}^2$")
+        if ax is axes[0][0]:
+            ax.set_ylabel("$r_n^2$")
+        ax.set_title(MODEL_LABELS[m].replace(" R50-FPN", ""), fontsize=9)
+        ax.legend(fontsize=6.5, loc="upper left")
+    fig.tight_layout()
+    pd.DataFrame(rows).to_csv(results_dir(cfg, "tables") / "recursion_fit.csv", index=False)
+    save(fig, out / "S_recursion")
+
+
 def fig_pareto(cfg, out):
     """Accuracy versus batch-8 latency for every format and, where run, the selective-precision variants."""
     from matplotlib.ticker import LogLocator, NullFormatter
@@ -1002,6 +1054,6 @@ if __name__ == "__main__":
     out = results_dir(cfg, "figures")
     for f in (fig_activation_maps, fig_hexbin, fig_propagation, fig_operator_amplification, fig_speed,
               fig_selective, fig_surface, fig_robustness, fig_risk, fig_aibo, fig_energy_surface,
-              fig_layer_profile, fig_conditions, fig_noise_model, fig_static_scale, fig_noise_validation, fig_qualitative, fig_pareto):
+              fig_layer_profile, fig_conditions, fig_noise_model, fig_static_scale, fig_noise_validation, fig_qualitative, fig_pareto, fig_recursion):
         f(cfg, out)
         print("done:", f.__name__, flush=True)
