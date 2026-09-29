@@ -1,0 +1,66 @@
+seed: 0
+
+paths:
+  data: data            # datasets and weights, not tracked (see README)
+  results: results
+
+coco:
+  root: data/coco
+  n_calib: 512          # images sampled from train2017, disjoint from evaluation
+  n_activation: 500     # val2017 images for the layer-wise activation analysis
+
+imagenetv2:
+  root: data/imagenetv2
+  n_calib: 1000         # first part of a seeded split, rest is used for top-1
+
+models:
+  - frcnn_r50_fpn
+  - yolov10s
+  - yolov10x
+  - efficientnet_b0
+  - densenet121
+
+precisions:
+  - fp32       # strict FP32, TF32 disabled
+  - fp16
+  - int8       # INT8 QDQ, FP16 for non-quantized ops (deployment setting)
+  - int8fp32   # INT8 QDQ, FP32 for non-quantized ops (isolates the quantization effect)
+
+benchmark:
+  warmup: 100
+  iters: 2000
+  repeats: 3
+  batch_sizes: [1, 8]
+  energy_seconds: 20
+  idle_seconds: 10
+
+# AIBO fleet scenario. Every value is an explicit assumption and is varied in the sensitivity
+# analysis; the reference values must be backed by a citation in the manuscript.
+aibo:
+  fleet_size: 1000
+  cameras_per_vehicle: 6
+  fps: 10
+  hours_per_day: 16
+  days_per_year: 365
+  batch: 8                               # measured batch size closest to the synchronised frames of all cameras
+  # Reference: EU non-household average, 2nd half 2025 (Eurostat news release, 8 May 2026).
+  electricity_eur_per_kwh: [0.10, 0.1837, 0.30]  # low / reference / high
+  # Reference: EU electricity emission intensity 2023 (Ember, European Electricity Review 2024).
+  grid_gco2_per_kwh: [100, 242, 400]             # low / reference / high
+
+# Operators left in high precision. The YOLOv10 NMS-free head selects its 300 detections with TopK
+# on the class scores; quantizing that input limits the scores to 127 levels and zeroes every score
+# below one quantization step, which corrupts the ranking that mAP is computed on. Post-processing is
+# therefore excluded, as in standard deployment practice; the effect is reported as an ablation.
+#
+# The distribution focal loss (DFL) decoder of YOLOv10 computes each box side as the expectation
+# sum_i p_i * i over 16 bins with a fixed-weight convolution. Quantizing its softmax input scales the
+# rounding error with the bin index and the stride, so large objects lose most (-8 mAP_large).
+# It is a decoding step, not a learned feature extractor, and is kept in high precision as well.
+quantization:
+  exclude_op_types:
+    yolov10s: [TopK]
+    yolov10x: [TopK]
+  exclude_nodes:
+    yolov10s: [/model.23/dfl/conv/Conv]
+    yolov10x: [/model.23/dfl/conv/Conv]
