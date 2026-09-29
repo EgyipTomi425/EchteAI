@@ -19,13 +19,23 @@ HOROWITZ = [("8-bit integer add", 0.03), ("32-bit integer add", 0.1), ("16-bit f
             ("32-bit SRAM read (8 kB)", 5.0), ("32-bit DRAM read", 640.0)]
 
 
+# Tables wider than the text block go on a landscape page (Springer template: sidewaystable) in a smaller font.
+WIDE = {"tab:accuracy", "tab:layerstats", "tab:aibo", "tab:engines", "tab:localization", "tab:propagation",
+        "tab:selective", "tab:placement"}
+SMALL = {"tab:models", "tab:datasets"}
+
+
 def write(path, body, cols, caption, label, notes=None):
-    lines = [r"\begin{table}[h]", rf"\caption{{{caption}}}\label{{{label}}}",
+    env = "sidewaystable" if label in WIDE else "table"
+    size = (r"\footnotesize\setlength{\tabcolsep}{4pt}" if label in WIDE
+            else (r"\footnotesize\setlength{\tabcolsep}{4pt}" if label in SMALL else ""))
+    lines = [rf"\begin{{{env}}}" + ("" if env == "sidewaystable" else "[h]"), size,
+             rf"\caption{{{caption}}}\label{{{label}}}",
              rf"\begin{{tabular}}{{@{{}}{cols}@{{}}}}", r"\toprule", *body, r"\botrule", r"\end{tabular}"]
     if notes:
         lines.append(rf"\footnotetext{{{notes}}}")
-    lines.append(r"\end{table}")
-    path.write_text("\n".join(lines) + "\n")
+    lines.append(rf"\end{{{env}}}")
+    path.write_text("\n".join(l for l in lines if l) + "\n")
 
 
 def fmt(v, digits=1):
@@ -54,11 +64,11 @@ def table_models(cfg, out):
     if not p.exists():
         return
     df = pd.read_csv(p).set_index("model")
-    body = [r"Model & Task & Input & Params (M) & GFLOPs & Conv layers & \multicolumn{3}{c}{Weights (MB)} \\",
+    body = [r"Model & Task & Input & Params (M) & GFLOPs & Convs & \multicolumn{3}{c}{Weights (MB)} \\",
             r"\cmidrule{7-9}", r" & & & & & & FP32 & FP16 & INT8 \\", r"\midrule"]
     for m in [m for m in ORDER if m in df.index]:
         r = df.loc[m]
-        body.append(f"{MODEL_LABELS[m]} & {'detection' if r.task == 'det' else 'classification'} & {r.input} & "
+        body.append(f"{MODEL_LABELS[m]} & {'det.' if r.task == 'det' else 'cls.'} & {r.input.replace('x', '$\\times$')} & "
                     f"{fmt(r.params_M)} & {fmt(r.gflops)} & {int(r.conv_layers)} & {fmt(r.weights_mb_fp32)} & "
                     f"{fmt(r.weights_mb_fp16)} & {fmt(r.weights_mb_int8)} \\\\")
     write(out / "M1_models.tex", body, "lllrrrrrr", "Evaluated architectures", "tab:models",
@@ -73,10 +83,10 @@ def table_datasets(cfg, out):
     df = pd.read_csv(p)
     body = [r"Split & Purpose & Images & Objects & Obj./img & S/M/L (\%) & Traffic (\%) \\",
             r"\midrule"]
-    purpose = {"COCO train2017 calibration subset": "INT8 calibration (detectors)",
+    purpose = {"COCO train2017 calibration subset": "calibration (detectors)",
                "COCO val2017 (accuracy, deviation-risk)": "mAP, deviation--risk",
                "COCO val2017 analysis subset (activations, robustness)": "activations, robustness",
-               "ImageNetV2 calibration": "INT8 calibration (classifiers)",
+               "ImageNetV2 calibration": "calibration (classifiers)",
                "ImageNetV2 evaluation": "top-1, activations"}
     for _, r in df.iterrows():
         name = (r.split.split(" (")[0].replace("COCO ", "").replace(" calibration subset", " subset")
