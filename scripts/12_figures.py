@@ -585,20 +585,33 @@ def fig_aibo(cfg, out):
         ax_t.set_ylabel("accuracy (mAP or top-1, %)")
         ax_t.set_title("c  accuracy vs operating cost", loc="left")
 
-    be = a[a.precision != "fp32"].dropna(subset=["breakeven_eur_per_error"])
-    be = be[be.breakeven_eur_per_error > 0]
-    shown = [p for p in precisions if p != "fp32"]
-    det_models = [m for m in models if m in ("frcnn_r50_fpn", "yolov10s", "yolov10x")]   # road-user errors
-    for i, p in enumerate(shown):
-        g = be[be.precision == p].set_index("model").reindex(det_models)
-        y = np.arange(len(det_models)) + (i - (len(shown) - 1) / 2) * 0.22
-        ax_b.scatter(g.breakeven_eur_per_error * 1e6, y, color=PRECISION_COLORS[p], s=26, zorder=2)
+    # d: total annual cost C(p, lambda) = energy cost + critical errors x penalty (Eq. aibo) for one detector; the
+    # lower envelope gives the cost-optimal precision for every penalty per critical error.
+    focus = "yolov10x" if "yolov10x" in models else models[0]
+    g = a[(a.model == focus) & a.precision.isin(precisions)].set_index("precision")
+    n_inf = g.inferences_per_year.iloc[0]
+    lam = np.geomspace(1e-9, 1e-4, 400)
+    costs = {p: (g.loc[p, "eur_per_year_ref"] + g.loc[p, "critical_per_image"] * n_inf * lam) / 1000
+             for p in precisions if p in g.index and pd.notna(g.loc[p, "critical_per_image"])}
+    for p, c in costs.items():
+        ax_b.plot(lam * 1e6, c, color=PRECISION_COLORS[p], linewidth=1.4, label=PRECISION_LABELS[p])
+    env = np.min(np.vstack(list(costs.values())), axis=0)
+    ax_b.plot(lam * 1e6, env, color=INK_2, linewidth=3.0, alpha=0.25, zorder=0)
+    best = [min(costs, key=lambda p: costs[p][i]) for i in range(len(lam))]
+    switch = [(lam[i], best[i]) for i in range(1, len(lam)) if best[i] != best[i - 1]]
+    for l_, p in switch:
+        ax_b.axvline(l_ * 1e6, color=MUTED, linewidth=0.7, linestyle=":")
+        ax_b.annotate(f"{PRECISION_LABELS[p]} optimal above {l_ * 1e6:.2g}", (l_ * 1e6, 0.97),
+                      xycoords=("data", "axes fraction"), textcoords="offset points", xytext=(3, 0), fontsize=6.5,
+                      color=INK_2, rotation=90, va="top")
     ax_b.set_xscale("log")
+    ax_b.set_yscale("log")
     ax_b.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:g}"))
-    ax_b.set_yticks(np.arange(len(det_models)), [MODEL_LABELS[m].replace(" R50-FPN", "") for m in det_models])
-    ax_b.set_ylim(len(det_models) - 0.5, -0.5)
-    ax_b.set_xlabel("break-even penalty ($\\mu$EUR per vanished road-user detection)")
-    ax_b.set_title("d  penalty at which the saving vanishes", loc="left")
+    ax_b.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:g}"))
+    ax_b.set_xlabel("penalty per critical error $\\lambda$ ($\\mu$EUR)")
+    ax_b.set_ylabel("total cost (kEUR per year)")
+    ax_b.set_title(f"d  cost-optimal precision, {MODEL_LABELS[focus]}", loc="left")
+    ax_b.legend(fontsize=7, loc="upper left")
     fig.tight_layout(h_pad=1.6)
     save(fig, out / "R6_aibo")
 
@@ -785,11 +798,16 @@ def fig_pareto(cfg, out):
     save(fig, out / "S_pareto")
 
 
-def fig_qualitative(cfg, out, name="yolov10x", image=336232, settings=(("clean", 0), ("contrast", 4))):
-    """FP32, INT8 and FP8 detections with the head-input deviation map on one traffic scene."""
+def fig_qualitative(cfg, out, name="yolov10x"):
+    """FP32, INT8 and FP8 detections with the head-input deviation map on one traffic scene (28_qualitative.py)."""
     from matplotlib.patches import Rectangle
     from pepai.agreement import greedy_match
     d = results_dir(cfg, "qualitative")
+    chosen = d / f"{name}_chosen.json"
+    if not chosen.exists():
+        return
+    c_ = json.loads(chosen.read_text())
+    image, settings = c_["image"], (("clean", 0), (c_["condition"], c_["severity"]))
     files = {(c, s_, q): d / f"{name}_{image}_{c}{s_}_{q}.npz" for c, s_ in settings for q in ("int8fp32", "fp8")}
     if not all(f.exists() for f in files.values()):
         return
@@ -812,7 +830,7 @@ def fig_qualitative(cfg, out, name="yolov10x", image=336232, settings=(("clean",
             im = ax.imshow(np.clip(z["deviation"] * 100, 0, 30), cmap=SEQUENTIAL, alpha=0.6, vmin=0, vmax=30)
             iou, match = greedy_match(z["fp32_boxes"], z["fp32_labels"], z["fp32_scores"], z["q_boxes"], z["q_labels"],
                                       0.5)
-            for b in z["q_boxes"]:
+            for b in z["q_boxes"][z["q_scores"] >= 0.5]:          # shown at the operating threshold
                 ax.add_patch(Rectangle(b[:2], b[2] - b[0], b[3] - b[1], fill=False, lw=0.9,
                                        edgecolor=PRECISION_COLORS["int8" if q.startswith("int8") else "fp8"]))
             vanished = z["fp32_boxes"][iou < 0.5]
@@ -820,11 +838,12 @@ def fig_qualitative(cfg, out, name="yolov10x", image=336232, settings=(("clean",
                 ax.add_patch(Rectangle(b[:2], b[2] - b[0], b[3] - b[1], fill=False, lw=1.3, linestyle="--",
                                        edgecolor=vanish_color))
             label = "INT8" if q.startswith("int8") else "FP8"
-            ax.set_title(f"{label}: head SQNR {float(z['sqnr_db']):.1f} dB, {len(vanished)} vanished",
+            ax.set_title(f"{label}: head-input SQNR {float(z['sqnr_db']):.1f} dB, {len(vanished)} vanished",
                          fontsize=8, loc="left")
         for ax in axes[i]:
             ax.set_axis_off()
-    cb = fig.colorbar(im, ax=axes[:, 1:].ravel().tolist(), fraction=0.02, pad=0.01)
+    cax = fig.add_axes([0.915, 0.2, 0.012, 0.6])
+    cb = fig.colorbar(im, cax=cax)
     cb.set_label("head-input MRE$_{proj}$ (%)", fontsize=7)
     fig.text(0.5, 0.0, "dashed red: FP32 detections without an INT8/FP8 counterpart (IoU $\\geq$ 0.5, score $\\geq$ 0.3)",
              ha="center", fontsize=7, color=INK_2)
