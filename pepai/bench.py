@@ -102,3 +102,29 @@ def energy(model, inputs, monitor, seconds, batch, idle_w):
         "sm_clock_mhz": float(np.mean(clocks)),
         "temp_c_max": float(np.max(temps)),
     }
+
+
+ENERGY_COLUMNS = ["energy_j_per_img", "energy_net_j_per_img", "avg_power_w", "idle_power_w", "sustained_img_s",
+                  "sm_clock_mhz"]
+
+
+def benchmark_medians(tables_dir, files=("benchmark.csv", "benchmark_bs6.csv", "benchmark_extra.csv")):
+    """Median over repeats per (model, precision, batch) of every benchmark table.
+
+    Latency always comes from the CUDA-graph runs of 04_benchmark.py. Energy columns are taken from
+    energy_graph.csv (36_energy_graph.py, CUDA-graph replays, i.e. the execution mode of the reported latencies)
+    wherever it covers an engine, and from the direct-enqueue runs of 04_benchmark.py otherwise; the column
+    energy_mode records which one was used."""
+    import pandas as pd
+    frames = [pd.read_csv(tables_dir / f) for f in files if (tables_dir / f).exists()]
+    b = pd.concat(frames).groupby(["model", "precision", "batch"]).median(numeric_only=True)
+    b["energy_mode"] = "enqueue"
+    g_path = tables_dir / "energy_graph.csv"
+    if g_path.exists():
+        g = pd.read_csv(g_path).groupby(["model", "precision", "batch"]).median(numeric_only=True)
+        common = b.index.intersection(g.index)
+        for c in ENERGY_COLUMNS:
+            if c in g.columns:
+                b.loc[common, c] = g.loc[common, c]
+        b.loc[common, "energy_mode"] = "graph"
+    return b

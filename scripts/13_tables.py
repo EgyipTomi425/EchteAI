@@ -5,6 +5,7 @@ import re
 import pandas as pd
 
 from pepai.activations import load_activation_table
+from pepai.bench import benchmark_medians
 from pepai.config import load_config, results_dir
 from pepai.plots import MODEL_LABELS, PRECISION_LABELS
 
@@ -21,7 +22,7 @@ HOROWITZ = [("8-bit integer add", 0.03), ("32-bit integer add", 0.1), ("16-bit f
 
 # Tables wider than the text block go on a landscape page (Springer template: sidewaystable) in a smaller font.
 WIDE = {"tab:accuracy", "tab:layerstats", "tab:aibo", "tab:engines", "tab:localization", "tab:propagation",
-        "tab:selective", "tab:placement", "tab:operating", "tab:duplicates", "tab:calibvar", "tab:calibmethods"}
+        "tab:selective", "tab:placement", "tab:operating", "tab:duplicates", "tab:calibvar", "tab:calibmethods", "tab:deployment"}
 SMALL = {"tab:models", "tab:datasets"}
 
 
@@ -116,7 +117,7 @@ def table_accuracy_speed(cfg, out):
     acc = pd.read_csv(acc_p).set_index(["model", "precision"])
     ci_p = results_dir(cfg, "tables") / "accuracy_ci.csv"
     ci = pd.read_csv(ci_p).set_index(["model", "precision"]) if ci_p.exists() else None
-    bench = pd.read_csv(bench_p).groupby(["model", "precision", "batch"]).median(numeric_only=True)
+    bench = benchmark_medians(results_dir(cfg, "tables"))
     body = [r"Model & Precision & Accuracy (\%) & $\Delta$ vs FP32 [95\% CI] & p50 bs1 (ms) & p99 bs1 (ms) & "
             r"Images/s bs8 & mJ/image bs8 \\", r"\midrule"]
     for m in [m for m in ORDER if (m, "fp32") in acc.index]:
@@ -151,7 +152,7 @@ def table_accuracy_speed(cfg, out):
           "for classifiers; 95\\% CI of the difference from 1\\,000 paired bootstrap resamples of the images. "
           "Latency: median (p50) and 99th percentile (p99) of 2\\,000 executions with CUDA graphs; throughput "
           "from the mean latency with CUDA graphs. Energy: gross GPU energy per image "
-          "from the NVML counter at sustained load. Median of three repeats. INT8 and FP8 engines keep non-quantized "
+          "from the NVML counter during sustained CUDA-graph execution. Median of three repeats. INT8 and FP8 engines keep non-quantized "
           "operations in FP16; INT8 uses the entropy calibration of the toolchain on the full calibration set in its "
           "stored order (sensitivity: Table~\\ref{tab:calibvar}); Faster R-CNN: backbone and FPN only.")
 
@@ -526,12 +527,20 @@ def table_duplicates(cfg, out):
                         f"{100 * r.duplicate_share:.2f} & {100 * r.mAP:.1f} & {100 * r.mAP_nms:.1f} & "
                         f"{100 * r.mAP_large:.1f} & {100 * r.mAP_large_nms:.1f} \\\\")
             first = False
+        if m == "yolov10x" and (results_dir(cfg, "tables") / "selective_duplicates.csv").exists():
+            sd = pd.read_csv(results_dir(cfg, "tables") / "selective_duplicates.csv").sort_values("k")
+            for _, r in sd[sd.model == m].iterrows():
+                body.append(f" & INT8, {int(r.k)} ranked conv.\\ in FP16 & {int(r.dets_above_threshold)} & "
+                            f"{100 * r.duplicate_share:.2f} & {100 * r.mAP:.1f} & {100 * r.mAP_nms:.1f} & "
+                            f"{100 * r.mAP_large:.1f} & {100 * r.mAP_large_nms:.1f} \\\\")
         body.append(r"\midrule")
     write(out / "X_duplicates.tex", body[:-1], "llrrrrrr",
           "Duplicate detections of the NMS-free YOLOv10 head (COCO val2017, 5\\,000 images)", "tab:duplicates",
           "Duplicates: detections with a score of at least 0.5 that overlap a higher-scoring detection of the same "
           "class with IoU $\\geq0.7$. + NMS: class-wise non-maximum suppression (IoU 0.7) appended to the engine "
-          "output as post-processing.")
+          "output as post-processing; on the GPU it takes 0.16\\,ms per image at batch size 1 and 0.04\\,ms per image "
+          "at batch size 8 (torchvision, 105--114 boxes per image). Ranked conv.: selective precision with the PEP-AI "
+          "ranking (Table~\\ref{tab:selective}).")
 
 
 def table_calibration_methods(cfg, out):
@@ -568,12 +577,65 @@ def table_calibration_methods(cfg, out):
           "COCO val2017 box mAP and ImageNetV2 top-1 (\\%); FP8: max calibration.")
 
 
+def table_deployment(cfg, out):
+    """Recommended deployment per network: accuracy, batch-8 latency and energy of the measured configurations."""
+    t = results_dir(cfg, "tables")
+    if not (t / "accuracy.csv").exists():
+        return
+    acc = pd.read_csv(t / "accuracy.csv").set_index(["model", "precision"])
+    bench = benchmark_medians(t)
+    dup = pd.read_csv(t / "duplicates.csv").set_index(["model", "precision"]) if (t / "duplicates.csv").exists() else None
+    nms = pd.read_csv(t / "nms_cost.csv").set_index(["model", "batch"]) if (t / "nms_cost.csv").exists() else None
+    pla = pd.read_csv(t / "placement_ablation.csv").set_index(["model", "variant"]) \
+        if (t / "placement_ablation.csv").exists() else None
+    # (model, configuration label, precision of the engine, accuracy override, extra batch-8 latency in ms)
+    configs = {
+        "frcnn_r50_fpn": [("FP16", "fp16", None, 0), ("INT8", "int8", None, 0)],
+        "yolov10s": [("FP16", "fp16", None, 0), ("INT8", "int8", None, 0), ("FP8", "fp8", None, 0)],
+        "yolov10x": [("FP16", "fp16", None, 0), ("FP8", "fp8", None, 0), ("INT8 + NMS", "int8", "nms", "nms")],
+        "efficientnet_b0": [("FP16", "fp16", None, 0), ("FP8", "fp8", None, 0)],
+        "densenet121": [("FP16", "fp16", None, 0), ("FP8", "fp8", None, 0),
+                        ("INT8, BN in FP16", "int8bnfp16", "bn_fp16", 0)],
+    }
+    body = [r"Model & Configuration & Accuracy (\%) & $\Delta$ vs FP32 & p50 bs8 (ms) & Energy bs8 (mJ/img) & "
+            r"Energy vs FP32 & Energy vs FP16 \\", r"\midrule"]
+    for m, rows in configs.items():
+        metric = "top1" if SPECS_TASK[m] == "cls" else "mAP"
+        ref = acc.loc[(m, "fp32"), metric] * 100
+        e32 = bench.loc[(m, "fp32", 8), "energy_j_per_img"]
+        e16 = bench.loc[(m, "fp16", 8), "energy_j_per_img"]
+        first = True
+        for label, prec, override, extra in rows:
+            if (m, prec, 8) not in bench.index:
+                continue
+            if override == "nms" and dup is not None:
+                a = dup.loc[(m, "int8"), "mAP_nms"] * 100
+            elif override == "bn_fp16" and pla is not None:
+                a = pla.loc[(m, "bn_fp16"), metric] * 100
+            else:
+                a = acc.loc[(m, prec), metric] * 100
+            lat = bench.loc[(m, prec, 8), "graph_p50_ms"] + (nms.loc[(m, 8), "p50_ms"] if extra == "nms" and nms is not None
+                                                            else 0)
+            e = bench.loc[(m, prec, 8), "energy_j_per_img"]
+            body.append(f"{MODEL_LABELS[m] if first else ''} & {label} & {a:.1f} & {signed(a - ref, 1)} & {lat:.2f} & "
+                        f"{1000 * e:.1f} & {signed(100 * (e / e32 - 1), 0)}\\% & "
+                        f"{signed(100 * (e / e16 - 1), 0)}\\% \\\\")
+            first = False
+        body.append(r"\midrule")
+    write(out / "X_deployment.tex", body[:-1], "llrrrrrr",
+          "Deployment options per network on the H200 (batch size 8)", "tab:deployment",
+          "Accuracy: COCO val2017 box mAP or ImageNetV2 top-1 of the deployed engine. INT8 + NMS: class-wise NMS "
+          "appended to the engine output (its GPU time is included in the latency; its energy is not). INT8, BN in "
+          "FP16: the placement selected by the label-free criteria (Table~\\ref{tab:placement}). Energy: gross GPU energy "
+          "per image with CUDA graphs.")
+
+
 if __name__ == "__main__":
     cfg = load_config()
     out = results_dir(cfg, "tables", "tex")
     for f in (table_models, table_datasets, table_energy_reference, table_placement, table_accuracy_speed, table_layer_stats, table_aibo,
               table_hardware, table_engines, table_localization, table_propagation, table_selective,
               table_calibration_variability, table_operating_point, table_duplicates,
-              table_calibration_methods):
+              table_calibration_methods, table_deployment):
         f(cfg, out)
         print("done:", f.__name__, flush=True)

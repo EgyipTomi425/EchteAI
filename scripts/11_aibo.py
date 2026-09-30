@@ -15,14 +15,16 @@ than FP32.
 import numpy as np
 import pandas as pd
 
+from pepai.bench import benchmark_medians
 from pepai.config import load_config, results_dir
 
 if __name__ == "__main__":
     cfg = load_config()
     a = cfg["aibo"]
     tables = results_dir(cfg, "tables")
-    bench = pd.concat([pd.read_csv(f) for f in (tables / "benchmark.csv", tables / "benchmark_bs6.csv") if f.exists()])
-    bench = bench[bench.batch == a["batch"]].groupby(["model", "precision"]).median(numeric_only=True)
+    bench = benchmark_medians(tables).reset_index()
+    bench = bench[(bench.batch == a["batch"]) & bench.precision.isin(["fp32", "fp16", "int8", "fp8"])]
+    bench = bench.set_index(["model", "precision"])
     inferences = (a["fleet_size"] * a["cameras_per_vehicle"] * a["fps"] * 3600
                   * a["hours_per_day"] * a["days_per_year"])
     agree_p = tables / "deployed_agreement.csv"

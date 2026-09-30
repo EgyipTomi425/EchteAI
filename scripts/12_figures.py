@@ -9,6 +9,7 @@ import pandas as pd
 from matplotlib.colors import LogNorm
 
 from pepai.activations import load_activation_table, resolved_inputs
+from pepai.bench import benchmark_medians
 from pepai.config import load_config, results_dir
 from pepai.models import IMAGENET_MEAN, IMAGENET_STD
 from pepai.plots import (BLUE_700, GRID as GRID_LINE, INK_2, MODEL_COLORS, MODEL_LABELS, MODEL_MARKERS, MUTED,
@@ -258,7 +259,8 @@ def fig_speed(cfg, out, bench_name="benchmark.csv"):
     path = results_dir(cfg, "tables") / bench_name
     if not path.exists():
         return
-    b = pd.read_csv(path).groupby(["model", "precision", "batch"]).median(numeric_only=True).reset_index()
+    b = benchmark_medians(results_dir(cfg, "tables")).reset_index()
+    b = b[b.precision.isin(["fp32", "fp16", "int8", "int8fp32", "fp8"])]
     precisions = [p for p in ("fp32", "fp16", "int8", "fp8") if p in set(b.precision)]
     models = [m for m in ORDER if m in set(b.model)]
     labels = [MODEL_LABELS[m].replace(" R50-FPN", "") for m in models]
