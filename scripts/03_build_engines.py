@@ -8,15 +8,15 @@ from pepai.models import SPECS
 from pepai.trt import build_engine
 
 
-def engine_jobs(cfg, models, precisions):
+def engine_jobs(cfg, models, precisions, batch_sizes=None):
     for name in models:
         spec = SPECS[name]
         for precision in precisions:
             onnx_path = results_dir(cfg, "onnx") / f"{name}_{precision}.onnx"
-            for bs in cfg["benchmark"]["batch_sizes"]:
+            for bs in batch_sizes or cfg["benchmark"]["batch_sizes"]:
                 shape = (bs, *spec.bench_shape)
                 yield name, precision, f"bs{bs}", onnx_path, {spec.input_name: (shape, shape, shape)}
-            if spec.dynamic_hw:
+            if spec.dynamic_hw and not batch_sizes:
                 (hmin, hmax), (wmin, wmax) = spec.dynamic_hw
                 c, h, w = spec.bench_shape
                 shapes = ((1, c, hmin, wmin), (1, c, h, w), (1, c, hmax, wmax))
@@ -33,6 +33,7 @@ if __name__ == "__main__":
     ap.add_argument("--models", nargs="*")
     ap.add_argument("--precisions", nargs="*")
     ap.add_argument("--debug", action="store_true", help="build the analysis engines instead")
+    ap.add_argument("--batch-sizes", nargs="*", type=int, help="static batch sizes instead of the configured ones")
     args = ap.parse_args()
     cfg = load_config()
     if args.debug:
@@ -50,7 +51,7 @@ if __name__ == "__main__":
     engine_dir = results_dir(cfg, "engines")
     cache = engine_dir / "timing.cache"
     for name, precision, tag, onnx_path, shapes in engine_jobs(
-        cfg, args.models or cfg["models"], args.precisions or cfg["precisions"]
+        cfg, args.models or cfg["models"], args.precisions or cfg["precisions"], args.batch_sizes
     ):
         out = engine_dir / f"{name}_{precision}_{tag}.engine"
         if out.exists():

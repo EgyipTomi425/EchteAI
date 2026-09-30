@@ -21,7 +21,7 @@ if __name__ == "__main__":
     cfg = load_config()
     a = cfg["aibo"]
     tables = results_dir(cfg, "tables")
-    bench = pd.read_csv(tables / "benchmark.csv")
+    bench = pd.concat([pd.read_csv(f) for f in (tables / "benchmark.csv", tables / "benchmark_bs6.csv") if f.exists()])
     bench = bench[bench.batch == a["batch"]].groupby(["model", "precision"]).median(numeric_only=True)
     inferences = (a["fleet_size"] * a["cameras_per_vehicle"] * a["fps"] * 3600
                   * a["hours_per_day"] * a["days_per_year"])

@@ -36,6 +36,7 @@ if __name__ == "__main__":
     ap.add_argument("--models", nargs="*")
     ap.add_argument("--precisions", nargs="*")
     ap.add_argument("--out", default="benchmark.csv")
+    ap.add_argument("--batch-sizes", nargs="*", type=int, help="instead of the configured batch sizes")
     ap.add_argument("--quick", action="store_true",
                     help="smoke check: one repeat, 300 iterations, CUDA-graph latency only, no energy")
     args = ap.parse_args()
@@ -43,6 +44,8 @@ if __name__ == "__main__":
     b = cfg["benchmark"]
     if args.quick:
         b = {**b, "repeats": 1, "iters": 300}
+    if args.batch_sizes:
+        b = {**b, "batch_sizes": args.batch_sizes}
     monitor = GPUMonitor()
     engine_dir = results_dir(cfg, "engines")
     out_dir = results_dir(cfg, "tables")
