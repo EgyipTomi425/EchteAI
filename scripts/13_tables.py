@@ -21,7 +21,7 @@ HOROWITZ = [("8-bit integer add", 0.03), ("32-bit integer add", 0.1), ("16-bit f
 
 # Tables wider than the text block go on a landscape page (Springer template: sidewaystable) in a smaller font.
 WIDE = {"tab:accuracy", "tab:layerstats", "tab:aibo", "tab:engines", "tab:localization", "tab:propagation",
-        "tab:selective", "tab:placement"}
+        "tab:selective", "tab:placement", "tab:operating", "tab:duplicates", "tab:calibvar", "tab:calibmethods"}
 SMALL = {"tab:models", "tab:datasets"}
 
 
@@ -152,7 +152,8 @@ def table_accuracy_speed(cfg, out):
           "Latency: median (p50) and 99th percentile (p99) of 2\\,000 executions with CUDA graphs; throughput "
           "from the mean latency with CUDA graphs. Energy: gross GPU energy per image "
           "from the NVML counter at sustained load. Median of three repeats. INT8 and FP8 engines keep non-quantized "
-          "operations in FP16; Faster R-CNN: backbone and FPN only.")
+          "operations in FP16; INT8 uses the entropy calibration of the toolchain on the full calibration set in its "
+          "stored order (sensitivity: Table~\\ref{tab:calibvar}); Faster R-CNN: backbone and FPN only.")
 
 
 def table_layer_stats(cfg, out, quant="int8fp32"):
@@ -436,30 +437,135 @@ def table_localization(cfg, out):
 
 
 def table_calibration_variability(cfg, out):
-    """INT8 accuracy for three seeded half-size calibration sets against the full calibration set."""
+    """INT8 accuracy for seeded calibration subsets (halves; quarters for the classifiers) against the full set."""
     p = results_dir(cfg, "tables") / "calibration_variability.csv"
     acc_p = results_dir(cfg, "tables") / "accuracy.csv"
     if not (p.exists() and acc_p.exists()):
         return
     v = pd.read_csv(p)
     acc = pd.read_csv(acc_p).set_index(["model", "precision"])
-    body = [r"Model & Calibration images & Full set & Seed 1 & Seed 2 & Seed 3 & Mean $\pm$ SD & Max $|\Delta|$ \\",
-            r"\midrule"]
+    gam_p = results_dir(cfg, "tables") / "propagation_factor.csv"
+    gam = pd.read_csv(gam_p).set_index("model") if gam_p.exists() else None
+    body = [r"Model & $\bar\Gamma$ & Calibration images & Full set & Seed 1 & Seed 2 & Seed 3 & Range & "
+            r"Max $|\Delta|$ \\", r"\midrule"]
     for m in [m for m in ORDER if m in set(v.model)]:
-        g = v[v.model == m].sort_values("seed")
         metric = "top1" if SPECS_TASK[m] == "cls" else "mAP"
-        vals = g[metric].values * 100
         full = acc.loc[(m, "int8"), metric] * 100 if (m, "int8") in acc.index else float("nan")
-        seeds = [f"{x:.2f}" for x in vals] + ["--"] * (3 - len(vals))
-        sd = vals.std(ddof=1) if len(vals) > 1 else float("nan")
-        body.append(f"{MODEL_LABELS[m]} & {int(g.n_calib.iloc[0])} & {full:.2f} & " + " & ".join(seeds)
-                    + f" & {vals.mean():.2f} $\\pm$ {sd:.2f} & {abs(vals - full).max():.2f} \\\\")
-    write(out / "X_calibration.tex", body, "lrrrrrrr",
+        g_all = v[v.model == m]
+        g_bar = ""
+        if gam is not None and m in gam.index:
+            col = "gamma_bar" if "gamma_bar" in gam.columns else gam.columns[-1]
+            g_bar = f"{float(gam.loc[m, col]):.2f}"
+        first = True
+        for n, g in sorted(g_all.groupby("n_calib"), key=lambda t: -t[0]):
+            if len(g) < 2:
+                continue
+            vals = g.sort_values("seed")[metric].values * 100
+            seeds = [f"{x:.2f}" for x in vals] + ["--"] * (3 - len(vals))
+            body.append(f"{MODEL_LABELS[m] if first else ''} & {g_bar if first else ''} & {int(n)} & "
+                        f"{full:.2f} & " + " & ".join(seeds) + f" & {vals.min():.2f}--{vals.max():.2f} & "
+                        f"{abs(vals - full).max():.2f} \\\\")
+            first = False
+    write(out / "X_calibration.tex", body, "lrrrrrrrr",
           "Sensitivity of the deployed INT8 accuracy to the calibration sample", "tab:calibvar",
-          "Entropy calibration on three seeded random halves of the calibration set (COCO train2017 or ImageNetV2 "
-          "calibration split), same exclusions and deployment engine as the main results; accuracy on the full "
-          "evaluation sets (COCO val2017 box mAP, ImageNetV2 top-1, \\%). Max $|\\Delta|$: largest deviation of a "
-          "half-set calibration from the full-set result.")
+          "Entropy calibration on seeded random subsets of the calibration set (COCO train2017: 512 images; "
+          "ImageNetV2 calibration split: 1\\,000 images), same exclusions and deployment engines as the main "
+          "results; accuracy on the full evaluation sets (COCO val2017 box mAP, ImageNetV2 top-1, \\%). Full set: "
+          "main result (Table~\\ref{tab:accuracy}); recalibrating on the full set with the same code reproduces it. "
+          "Max $|\\Delta|$: largest deviation of a subset calibration from the full-set result.")
+
+
+def table_operating_point(cfg, out):
+    """Road-user detection quality per precision: AP50 per class and recall at the operating threshold."""
+    p = results_dir(cfg, "tables") / "operating_point.csv"
+    if not p.exists():
+        return
+    d = pd.read_csv(p)
+    body = [r"Model & Precision & \multicolumn{2}{c}{AP$_{50}$ (\%)} & \multicolumn{2}{c}{AP (\%)} & "
+            r"\multicolumn{3}{c}{Recall at score $\geq0.5$ (\%)} & Precision (\%) \\",
+            r"\cmidrule{3-4}\cmidrule{5-6}\cmidrule{7-9}",
+            r" & & person & car & person & car & all & $\geq32^2$\,px & large & \\", r"\midrule"]
+    for m in [m for m in ORDER if m in set(d.model)]:
+        first = True
+        for prec in ["fp32", "fp16", "int8", "fp8"]:
+            g = d[(d.model == m) & (d.precision == prec)]
+            if g.empty:
+                continue
+            r = g.iloc[0]
+            body.append(f"{MODEL_LABELS[m] if first else ''} & {PRECISION_LABELS[prec]} & "
+                        f"{100 * r.AP50_person:.1f} & {100 * r.AP50_car:.1f} & {100 * r.AP_person:.1f} & "
+                        f"{100 * r.AP_car:.1f} & {100 * r.recall_road_all:.1f} & {100 * r.recall_road_ml:.1f} & "
+                        f"{100 * r.recall_road_large:.1f} & {100 * r.precision_road_all:.1f} \\\\")
+            first = False
+        body.append(r"\midrule")
+    write(out / "X_operating_point.tex", body[:-1], "llrrrrrrrr",
+          "Detection quality for road users (COCO val2017, 5\\,000 images)", "tab:operating",
+          "AP$_{50}$: average precision at IoU 0.5; AP: COCO AP@[.5:.95] of the class. Recall and precision: all "
+          "road-user classes (person, bicycle, car, motorcycle, bus, truck) at the operating threshold (score "
+          "$\\geq0.5$) and IoU $\\geq0.5$, with the greedy score-ordered matching of COCOeval; $\\geq32^2$\\,px: COCO medium "
+          "and large objects. Precision is a lower bound, because COCO does not annotate every visible object.")
+
+
+def table_duplicates(cfg, out):
+    """Duplicate detections of the NMS-free YOLOv10 head and the effect of appending class-wise NMS."""
+    p = results_dir(cfg, "tables") / "duplicates.csv"
+    if not p.exists():
+        return
+    d = pd.read_csv(p)
+    body = [r"Model & Precision & Detections $\geq0.5$ & Duplicates (\%) & mAP & mAP + NMS & "
+            r"mAP$_\text{large}$ & mAP$_\text{large}$ + NMS \\", r"\midrule"]
+    labels = {**PRECISION_LABELS, "int8fp32": "INT8 (FP32 fallback)"}
+    for m in [m for m in ORDER if m in set(d.model)]:
+        first = True
+        for prec in ["fp32", "fp16", "int8", "int8fp32", "fp8"]:
+            g = d[(d.model == m) & (d.precision == prec)]
+            if g.empty:
+                continue
+            r = g.iloc[0]
+            body.append(f"{MODEL_LABELS[m] if first else ''} & {labels[prec]} & {int(r.dets_above_threshold)} & "
+                        f"{100 * r.duplicate_share:.2f} & {100 * r.mAP:.1f} & {100 * r.mAP_nms:.1f} & "
+                        f"{100 * r.mAP_large:.1f} & {100 * r.mAP_large_nms:.1f} \\\\")
+            first = False
+        body.append(r"\midrule")
+    write(out / "X_duplicates.tex", body[:-1], "llrrrrrr",
+          "Duplicate detections of the NMS-free YOLOv10 head (COCO val2017, 5\\,000 images)", "tab:duplicates",
+          "Duplicates: detections with a score of at least 0.5 that overlap a higher-scoring detection of the same "
+          "class with IoU $\\geq0.7$. + NMS: class-wise non-maximum suppression (IoU 0.7) appended to the engine "
+          "output as post-processing.")
+
+
+def table_calibration_methods(cfg, out):
+    """INT8 accuracy under the calibration variants: toolchain (stored order), first image varied, order-independent."""
+    t = results_dir(cfg, "tables")
+    if not all((t / f).exists() for f in ("accuracy.csv", "calibration_variability.csv", "global_entropy.csv")):
+        return
+    acc = pd.read_csv(t / "accuracy.csv").set_index(["model", "precision"])
+    var = pd.read_csv(t / "calibration_variability.csv")
+    glob = pd.read_csv(t / "global_entropy.csv").set_index("model")
+    conv = pd.read_csv(t / "conv_only_placement.csv").set_index("variant") if (t / "conv_only_placement.csv").exists() \
+        else None
+    body = [r"Model & FP32 & \multicolumn{3}{c}{INT8, toolchain entropy calibration} & INT8, order-independent & FP8 \\",
+            r"\cmidrule{3-5}",
+            r" & & full set & subsets (range) & max $|\Delta|$ & entropy calibration & \\", r"\midrule"]
+    for m in [m for m in ORDER if m in glob.index]:
+        metric = "top1" if SPECS_TASK[m] == "cls" else "mAP"
+        f = lambda p: acc.loc[(m, p), metric] * 100 if (m, p) in acc.index else float("nan")
+        n_full = 1000 if SPECS_TASK[m] == "cls" else 512
+        v = var[(var.model == m) & (var.n_calib < n_full)][metric] * 100
+        full = f("int8")
+        body.append(f"{MODEL_LABELS[m]} & {f('fp32'):.2f} & {full:.2f} & {v.min():.2f}--{v.max():.2f} & "
+                    f"{(v - full).abs().max():.2f} & {glob.loc[m, metric] * 100:.2f} & {f('fp8'):.2f} \\\\")
+    if conv is not None:
+        body.append(f"EfficientNet-B0, convolution inputs only & {acc.loc[('efficientnet_b0', 'fp32'), 'top1'] * 100:.2f} & "
+                    f"{conv.loc['toolchain', 'top1'] * 100:.2f} & -- & -- & {conv.loc['global', 'top1'] * 100:.2f} & -- \\\\")
+    write(out / "X_calibration_methods.tex", body, "lrrrrrr",
+          "INT8 accuracy under different range-setting procedures", "tab:calibmethods",
+          "Toolchain: incremental entropy calibration of ModelOpt on ONNX Runtime (one image per step), full "
+          "calibration set in stored order (main results) and seeded random subsets, which differ in their first "
+          "image (Table~\\ref{tab:calibvar}). Order-independent: global 2048-bin histogram with NVIDIA's reference "
+          "KL search (Supplementary Section~\\ref{sec:supp-quant}), applied to the same quantizers. Convolution inputs "
+          "only: quantizers on the inputs of convolutions and matrix multiplications, as in~\\cite{wu2020integer}. "
+          "COCO val2017 box mAP and ImageNetV2 top-1 (\\%); FP8: max calibration.")
 
 
 if __name__ == "__main__":
@@ -467,6 +573,7 @@ if __name__ == "__main__":
     out = results_dir(cfg, "tables", "tex")
     for f in (table_models, table_datasets, table_energy_reference, table_placement, table_accuracy_speed, table_layer_stats, table_aibo,
               table_hardware, table_engines, table_localization, table_propagation, table_selective,
-              table_calibration_variability):
+              table_calibration_variability, table_operating_point, table_duplicates,
+              table_calibration_methods):
         f(cfg, out)
         print("done:", f.__name__, flush=True)

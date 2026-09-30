@@ -31,33 +31,34 @@ if __name__ == "__main__":
     out = results_dir(cfg, "calib_variability")
     table = results_dir(cfg, "tables") / "calibration_variability.csv"
     rows = pd.read_csv(table).to_dict("records") if table.exists() else []
-    done = {(r["model"], r["seed"]) for r in rows}
+    done = {(r["model"], r["seed"], r["n_calib"]) for r in rows}
     coco, ids = data.coco_val_ids(cfg)
     _, cls_items = data.imagenetv2_split(cfg)
     for name in args.models:
         spec = SPECS[name]
         calib = None
         for seed in args.seeds:
-            if (name, seed) in done:
-                continue
             if calib is None:
                 calib = calibration_inputs(cfg, name)
             n = len(calib)
+            if (name, seed, int(n * args.fraction)) in done:
+                continue
+            tag = f"s{seed}" if args.fraction == 0.5 else f"f{round(100 * args.fraction)}_s{seed}"
             idx = sorted(random.Random(seed).sample(range(n), int(n * args.fraction)))
             subset = [calib[i] for i in idx] if isinstance(calib, list) else calib[idx]
-            q32 = out / f"{name}_s{seed}_int8fp32.onnx"
-            q16 = out / f"{name}_s{seed}_int8.onnx"
+            q32 = out / f"{name}_{tag}_int8fp32.onnx"
+            q16 = out / f"{name}_{tag}_int8.onnx"
             to_int8(results_dir(cfg, "onnx") / f"{name}_fp32.onnx", q32, subset, method="entropy",
                     nodes_to_exclude=excluded_nodes(cfg, name), op_types_to_exclude=excluded_op_types(cfg, name))
             int8_with_fp16(q32, q16)
             if name == "frcnn_r50_fpn":
-                engine = out / f"{name}_s{seed}_int8_dyn.engine"
+                engine = out / f"{name}_{tag}_int8_dyn.engine"
                 shapes = engine_shapes(spec)
             elif spec.task == "det":
-                engine = out / f"{name}_s{seed}_int8_bs1.engine"
+                engine = out / f"{name}_{tag}_int8_bs1.engine"
                 shapes = {spec.input_name: ((1, *spec.bench_shape),) * 3}
             else:
-                engine = out / f"{name}_s{seed}_int8_bs8.engine"
+                engine = out / f"{name}_{tag}_int8_bs8.engine"
                 shapes = {spec.input_name: ((8, *spec.bench_shape),) * 3}
             build_engine(q16, engine, shapes, timing_cache=results_dir(cfg, "engines") / "timing.cache")
             row = {"model": name, "seed": seed, "n_calib": len(idx)}

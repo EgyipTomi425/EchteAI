@@ -639,8 +639,8 @@ def fig_noise_model(cfg, out, n=400_000):
     from scipy.stats import norm
     rng = np.random.default_rng(cfg["seed"])
     signals = {"Gaussian": rng.standard_normal(n), "Laplacian": rng.laplace(0, 1 / np.sqrt(2), n)}
-    fp8_db = -10 * np.log10(0.180 * 2.0 ** -8)
-    fp16_db = -10 * np.log10(0.180 * 2.0 ** -22)
+    fp8_db = -10 * np.log10(2.0 ** -8 / (8 * np.log(2)))   # Lemma 1: E e^2 = E x^2 2^(-2p) / (8 ln 2), p = 4
+    fp16_db = -10 * np.log10(2.0 ** -22 / (8 * np.log(2)))  # p = 11
 
     def sqnr(x, q):
         return 10 * np.log10(np.sum(x ** 2) / np.sum((q - x) ** 2))

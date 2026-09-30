@@ -116,6 +116,14 @@ def tasks(cfg):
                                   f"int8 fp8 && {py} scripts/04_benchmark.py --batch-sizes 6 --precisions fp32 fp16 int8 "
                                   f"fp8 --out benchmark_bs6.csv"], []))
     out.append(("calibration_variability", [py, "scripts/29_calibration_variability.py"], []))
+    out.append(("calibration_size_classifiers", ["bash", "-c", f"{py} scripts/29_calibration_variability.py --models "
+                                  f"efficientnet_b0 densenet121 --fraction 1.0 --seeds 1 && {py} scripts/29_calibration_variability.py "
+                                  f"--models efficientnet_b0 densenet121 --fraction 0.25"], []))
+    out.append(("global_entropy", [py, "scripts/34_global_entropy.py"], []))
+    out.append(("conv_only_placement", [py, "scripts/35_conv_only_placement.py"],
+                [results_dir(cfg, "calib_global") / "efficientnet_b0_global_thresholds.json"]))
+    out.append(("scale_swap_efficientnet", [py, "scripts/31_scale_swap.py", "--model", "efficientnet_b0", "--seed", "1"],
+                [results_dir(cfg, "calib_variability") / "efficientnet_b0_s1_int8fp32.onnx"]))
     # Runs last, only when every other task is done (see the main loop): clean rebuild + benchmark.
     out.append(("final_benchmark", ["env", f"PY={py}", "bash", "scripts/final_benchmark.sh"], []))
     out.append(("model_stats", [py, "scripts/09_model_stats.py"],
@@ -126,7 +134,7 @@ def tasks(cfg):
 TEST_SCRIPTS = ("04_benchmark", "05_accuracy", "06_activations", "07_risk", "08_robustness",
                 "09_model_stats", "10_selective", "16_localization", "17_placement_ablation",
                 "20_label_free_selection", "21_robust_calibration", "22_bootstrap_ci",
-                "final_benchmark", "29_calibration_variability")
+                "final_benchmark", "29_calibration_variability", "31_scale_swap", "34_global_entropy", "35_conv_only_placement")
 
 
 def other_test_running():
