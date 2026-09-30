@@ -1,0 +1,3 @@
+model,variant,n_quantizers,n_missing,top1
+efficientnet_b0,toolchain,81,0,0.23844444444444443
+efficientnet_b0,global,81,0,0.5491111111111111

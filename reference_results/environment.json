@@ -1,0 +1,14 @@
+{
+  "gpu": "NVIDIA H200",
+  "compute_capability": "9.0",
+  "driver": "590.48.01",
+  "power_limit_w": 700.0,
+  "cuda": "12.8",
+  "tensorrt": "11.3.0.99",
+  "modelopt": "0.47.0",
+  "onnxruntime": "1.24.4",
+  "onnx": "1.21.0",
+  "torch": "2.11.0+cu128",
+  "python": "3.12.14",
+  "cpu": "Intel(R) Xeon(R) Platinum 8480C"
+}

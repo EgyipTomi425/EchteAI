@@ -1,0 +1,2 @@
+model,gflops_total,deep_flop_share,background_fraction_median,background_fraction_mean,skippable_upper_bound_median,mre_object_median,mre_background_median
+frcnn_r50_fpn,240.3975168,0.526937782412235,0.5852436655405405,0.5483461855769747,0.30838699929074015,0.02865486498922105,0.03330897912383075

@@ -1,0 +1,18 @@
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Activation-level deviation of INT8 from strict FP32 (500 images per model)}\label{tab:layerstats}
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+Model & \multicolumn{3}{c}{Head input (INT8)} & \multicolumn{2}{c}{All convolutions (INT8)} & Head SQNR FP16 \\
+\cmidrule{2-4}\cmidrule{5-6}
+ & MRE$_\text{proj}$ (\%) & MRE$_\text{elem}$ (\%) & SQNR (dB) & MRE$_\text{elem}$ (\%) & worst SQNR (dB) & (dB) \\
+\midrule
+Faster R-CNN R50-FPN & 2.0 [1.7, 2.3] & 7.1 [6.0, 8.3] & 21.5 [20.1, 23.2] & 8.6 [7.4, 10.1] & 12.2 & 50.5 \\
+YOLOv10-S & 5.8 [5.1, 6.6] & 16.9 [14.5, 20.6] & 11.6 [10.1, 13.0] & 17.1 [15.6, 18.9] & 9.5 & 45.7 \\
+YOLOv10-X & 14.4 [12.8, 16.1] & 37.8 [30.4, 45.9] & 4.3 [3.3, 5.4] & 37.2 [32.0, 44.0] & 2.0 & 36.9 \\
+EfficientNet-B0 & 25.9 [20.9, 34.8] & 81.4 [72.5, 91.1] & -0.9 [-1.8, -0.2] & 48.6 [46.4, 50.5] & -1.2 & 42.8 \\
+DenseNet-121 & 13.4 [10.8, 16.9] & 20.9 [14.9, 28.1] & 6.6 [5.0, 7.9] & 32.4 [26.9, 38.3] & 5.3 & 45.2 \\
+\botrule
+\end{tabular}
+\footnotetext{Head input: tensors consumed by the task head. Median over images, interquartile range in brackets. All convolutions: per image, the median element-wise relative error over every convolution output, comparable to the cumulative error of the conference paper (9--20\%). Worst SQNR: lowest per-layer median. INT8 with FP32 fallback, so the deviation is caused by quantization alone; the FP16 column gives the numerical floor of the comparison.}
+\end{sidewaystable}

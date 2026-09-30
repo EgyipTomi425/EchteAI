@@ -85,15 +85,50 @@ randomness is seeded from it.
 | GPU cost of class-wise NMS on the YOLOv10 output | `37_nms_cost.py` | `tables/nms_cost.csv` |
 | Duplicate suppression under selective precision (YOLOv10-X) | `38_selective_duplicates.py` | `tables/selective_duplicates.csv` |
 | Engines of the DenseNet-121 variant with batch normalisation in FP16 | `39_build_extra.py` (then `04_benchmark.py`, `36_energy_graph.py`) | `tables/benchmark_extra.csv` |
+| Comparison of a new run with the reference results | `40_compare_results.py` | report (exit status 1 on accuracy deviations) |
+| TopK / DFL placement ablation of the YOLOv10 head | `41_topk_ablation.py` | `tables/ablation_topk.csv` |
 
-### Running everything
+## Reproducing the results
 
-Engine builds may run in parallel; measurements must not. `scripts/build_queue.sh` builds engines as
-soon as their quantized models exist. `scripts/run_tests.py` runs every measurement one at a time as
-soon as its inputs exist, never while another measurement is running, and records completed tasks in
-`results/logs/done.txt`. The last task, `scripts/final_benchmark.sh`, rebuilds all timed engines on an
-idle GPU, benchmarks them, re-measures accuracy on exactly these engines and regenerates every table
-and figure.
+**One command.** `scripts/reproduce.sh` runs every stage in order and can be restarted at any time:
+
+```bash
+scripts/reproduce.sh                          # check data models engines measure analyze compare
+scripts/reproduce.sh measure analyze compare  # or selected stages
+```
+
+| Stage | What it does |
+|---|---|
+| `check` | GPU, driver, CUDA, TensorRT and ModelOpt versions against `reference_results/environment.json` |
+| `data` | calibration subset and ImageNetV2 (COCO val2017 must already be in `data/coco/`) |
+| `models` | FP32 ONNX export, FP16/INT8 and FP8 quantization |
+| `engines` | static- and dynamic-shape TensorRT engines |
+| `measure` | every measurement via `scripts/run_tests.py`, then `scripts/final_benchmark.sh` |
+| `analyze` | fleet scenario, figures, LaTeX tables (and the manuscript if `../paper/main.tex` or `$PEPAI_PAPER` exists) |
+| `compare` | `scripts/40_compare_results.py`: new tables against `reference_results/tables/` |
+
+**Scheduling.** Engine builds may run in parallel; measurements never do. `scripts/run_tests.py` starts
+a measurement only when its inputs exist and no other measurement is running, and records completed tasks
+in `results/logs/done.txt`, so an interrupted run resumes where it stopped (delete a line to repeat a
+task). The last task, `scripts/final_benchmark.sh`, rebuilds all timed engines on an idle GPU, measures
+latency at batch sizes 1, 6 and 8 and energy with CUDA graphs, re-measures accuracy on exactly these
+engines and derives every remaining table and figure. On an NVIDIA H200 the measurements take about
+35 GPU hours, quantization and engine builds a few hours more.
+
+**What reproduces.** With the versions in `reference_results/environment.json`, accuracies, deviation
+statistics and all derived quantities are deterministic up to TensorRT tactic selection and should agree
+with the reference within the tolerances of `40_compare_results.py` (0.3 points for accuracies, 5 % for
+other statistics). As a check, re-running the TopK/DFL ablation from scratch (quantization, engine
+build and evaluation on 5 000 images, `41_topk_ablation.py`) reproduced all four mAP values of the
+reference to five decimals. Latency, energy and the fleet figures derived from them depend on the GPU, driver and
+TensorRT version; they are compared with a 10 % tolerance and reported as warnings. INT8 accuracies of
+the fragile networks also depend on the order of the calibration images (see the article); the
+calibration set is loaded in a fixed, seeded order.
+
+**Reference results.** `reference_results/` contains the tables, figures and small intermediate results
+of the run reported in the article (see `reference_results/README.md`). Large artefacts (ONNX models,
+TensorRT engines, stored detections and activations, about 21 GB) are not tracked; the pipeline
+regenerates them.
 
 ## License
 

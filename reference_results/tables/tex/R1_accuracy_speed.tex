@@ -1,0 +1,35 @@
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Task accuracy, latency, throughput and energy per precision (TensorRT 11.3, NVIDIA H200)}\label{tab:accuracy}
+\begin{tabular}{@{}llrlrrrr@{}}
+\toprule
+Model & Precision & Accuracy (\%) & $\Delta$ vs FP32 [95\% CI] & p50 bs1 (ms) & p99 bs1 (ms) & Images/s bs8 & mJ/image bs8 \\
+\midrule
+Faster R-CNN R50-FPN & FP32 & 37.0 & -- & 6.29 & 6.32 & 197 & 3184 \\
+ & FP16 & 36.9 & $-$0.01 [$-$0.04, $+$0.02] & 0.91 & 0.92 & 1571 & 443 \\
+ & INT8 & 36.7 & $-$0.25 [$-$0.36, $-$0.13] & 0.74 & 0.74 & 2312 & 281 \\
+ & FP8 & 36.6 & $-$0.37 [$-$0.49, $-$0.25] & 0.91 & 0.92 & 1770 & 392 \\
+\midrule
+YOLOv10-S & FP32 & 46.0 & -- & 1.78 & 1.78 & 1269 & 409 \\
+ & FP16 & 46.0 & $+$0.01 [$-$0.03, $+$0.03] & 0.81 & 0.81 & 4370 & 109 \\
+ & INT8 & 43.8 & $-$2.24 [$-$2.56, $-$1.83] & 0.69 & 0.69 & 5430 & 63.3 \\
+ & FP8 & 45.6 & $-$0.41 [$-$0.53, $-$0.28] & 0.68 & 0.69 & 4297 & 96.7 \\
+\midrule
+YOLOv10-X & FP32 & 54.0 & -- & 6.06 & 6.07 & 239 & 2477 \\
+ & FP16 & 54.0 & $-$0.01 [$-$0.07, $+$0.02] & 1.99 & 2.00 & 1160 & 582 \\
+ & INT8 & 47.8 & $-$6.21 [$-$6.52, $-$5.74] & 1.57 & 1.57 & 1658 & 295 \\
+ & FP8 & 53.9 & $-$0.15 [$-$0.31, $-$0.01] & 1.79 & 1.79 & 1375 & 430 \\
+\midrule
+EfficientNet-B0 & FP32 & 65.8 & -- & 0.59 & 0.60 & 7086 & 45.7 \\
+ & FP16 & 65.8 & $-$0.02 [$-$0.12, $+$0.06] & 0.42 & 0.42 & 12087 & 20.6 \\
+ & INT8 & 24.8 & $-$40.97 [$-$42.07, $-$39.77] & 0.38 & 0.38 & 16564 & 12.7 \\
+ & FP8 & 65.4 & $-$0.39 [$-$0.79, 0.00] & 0.52 & 0.52 & 9598 & 26.0 \\
+\midrule
+DenseNet-121 & FP32 & 62.0 & -- & 2.78 & 2.79 & 1912 & 152 \\
+ & FP16 & 62.0 & $-$0.02 [$-$0.11, $+$0.07] & 1.59 & 1.59 & 3344 & 70.5 \\
+ & INT8 & 57.4 & $-$4.68 [$-$5.37, $-$3.98] & 1.39 & 1.39 & 4325 & 40.6 \\
+ & FP8 & 61.7 & $-$0.32 [$-$0.64, $+$0.02] & 0.71 & 0.71 & 6510 & 40.9 \\
+\botrule
+\end{tabular}
+\footnotetext{Accuracy: COCO val2017 box mAP@[.5:.95] (5\,000 images) for detectors, ImageNetV2 top-1 (9\,000 images) for classifiers; 95\% CI of the difference from 1\,000 paired bootstrap resamples of the images. Latency: median (p50) and 99th percentile (p99) of 2\,000 executions with CUDA graphs; throughput from the mean latency with CUDA graphs. Energy: gross GPU energy per image from the NVML counter during sustained CUDA-graph execution. Median of three repeats. INT8 and FP8 engines keep non-quantized operations in FP16; INT8 uses the entropy calibration of the toolchain on the full calibration set in its stored order (sensitivity: Table~\ref{tab:calibvar}); Faster R-CNN: backbone and FPN only.}
+\end{sidewaystable}

@@ -1,0 +1,18 @@
+\begin{table}[h]
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Evaluated architectures}\label{tab:models}
+\begin{tabular}{@{}lllrrrrrr@{}}
+\toprule
+Model & Task & Input & Params (M) & GFLOPs & Convs & \multicolumn{3}{c}{Weights (MB)} \\
+\cmidrule{7-9}
+ & & & & & & FP32 & FP16 & INT8 \\
+\midrule
+Faster R-CNN R50-FPN & det. & 800$\times$1088 & 26.8 & 240.4 & 61 & 107.3 & 53.7 & 27.0 \\
+YOLOv10-S & det. & 640$\times$640 & 8.1 & 24.9 & 86 & 29.0 & 14.5 & 7.4 \\
+YOLOv10-X & det. & 640$\times$640 & 31.8 & 170.8 & 174 & 117.9 & 58.9 & 29.9 \\
+EfficientNet-B0 & cls. & 224$\times$224 & 5.3 & 0.8 & 81 & 21.1 & 10.5 & 6.8 \\
+DenseNet-121 & cls. & 224$\times$224 & 8.0 & 5.7 & 120 & 32.2 & 16.1 & 9.3 \\
+\botrule
+\end{tabular}
+\footnotetext{Faster R-CNN: backbone and FPN only (the part that is quantized); GFLOPs at the benchmark input size. INT8 weight size counts quantized weights at 1 byte and the remaining tensors in FP16.}
+\end{table}

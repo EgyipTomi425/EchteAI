@@ -1,0 +1,4 @@
+model,seed,variant,n_swapped,top_tensor,scale_full_top,scale_half_top,top1
+efficientnet_b0,1,top,1,/features/features.0/features.0.2/Mul_output_0,0.5593066811561584,0.7738655209541321,0.3417777777777778
+efficientnet_b0,1,rest,113,/features/features.0/features.0.2/Mul_output_0,0.5593066811561584,0.7738655209541321,0.38166666666666665
+efficientnet_b0,1,all,114,/features/features.0/features.0.2/Mul_output_0,0.5593066811561584,0.7738655209541321,0.417

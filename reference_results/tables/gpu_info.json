@@ -1,0 +1,5 @@
+{
+  "name": "NVIDIA H200",
+  "driver": "590.48.01",
+  "power_limit_w": 700.0
+}

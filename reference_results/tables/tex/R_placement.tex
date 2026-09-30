@@ -1,0 +1,24 @@
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{INT8 quantization variants and the variant selected by each label-free criterion}\label{tab:placement}
+\begin{tabular}{@{}llrrrl@{}}
+\toprule
+Model & Variant & Accuracy (\%) & Head SQNR (dB) & FP32 consistency & Picked by \\
+\midrule
+Faster R-CNN R50-FPN & default & 36.7 & 22.0 & 0.869 & SQNR, consistency, accuracy \\
+ & max calibration & 36.6 & 18.1 & 0.826 &  \\
+\midrule
+YOLOv10-S & default & 43.8 & 11.7 & 0.961 & SQNR, consistency \\
+ & max calibration & 44.5 & 7.7 & 0.945 & accuracy \\
+\midrule
+YOLOv10-X & default & 47.8 & 4.1 & 0.910 & SQNR, consistency \\
+ & max calibration & 49.7 & 2.2 & 0.909 & accuracy \\
+\midrule
+DenseNet-121 & default & 57.4 & 6.6 & 0.785 &  \\
+ & BN in FP16 & 61.6 & 17.5 & 0.953 & SQNR \\
+ & max calibration & 48.3 & 3.6 & 0.602 &  \\
+ & BN in FP16 + max calibration & 61.8 & 16.5 & 0.957 & consistency, accuracy \\
+\botrule
+\end{tabular}
+\footnotetext{Accuracy: top-1 (classifiers) or box mAP (detectors) on the evaluation data. Head SQNR and FP32 consistency are computed on the calibration split only. \emph{accuracy} marks the variant a test-set oracle would pick.}
+\end{sidewaystable}

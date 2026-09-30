@@ -1,0 +1,16 @@
+\begin{table}[h]
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Data splits}\label{tab:datasets}
+\begin{tabular}{@{}llrrrrr@{}}
+\toprule
+Split & Purpose & Images & Objects & Obj./img & S/M/L (\%) & Traffic (\%) \\
+\midrule
+train2017 subset & calibration (detectors) & 512 & 3\,401 & 6.6 & 43 / 32 / 25 & 44 \\
+val2017 & mAP, deviation--risk & 5\,000 & 36\,335 & 7.3 & 42 / 34 / 24 & 41 \\
+val2017 first 500 & activations, robustness & 500 & 3\,787 & 7.6 & 44 / 33 / 23 & 41 \\
+INV2 calibration & calibration (classifiers) & 1\,000 & -- & -- & -- & -- \\
+INV2 evaluation & top-1, activations & 9\,000 & -- & -- & -- & -- \\
+\botrule
+\end{tabular}
+\footnotetext{Traffic: share of objects in the classes person, bicycle, car, motorcycle, bus, truck, traffic light and stop sign. S/M/L: COCO size classes by box area ($<32^2$, $32^2$--$96^2$, $>96^2$ pixels). All subsets are drawn with a fixed seed.}
+\end{table}

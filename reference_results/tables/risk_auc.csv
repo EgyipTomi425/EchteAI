@@ -1,0 +1,37 @@
+model,level,target,predictor,auc,auc_lo,auc_hi,rate,share_mre_ge_6pct,n
+frcnn_r50_fpn,image,error,head MRE_proj,0.518914549750679,0.5031661879798474,0.5354460282803575,0.3528,0.0,
+frcnn_r50_fpn,image,error,n FP32 detections,0.8055525774380623,,,0.3528,,
+frcnn_r50_fpn,image,error_tol,head MRE_proj,0.494288126292685,0.4686079655929,0.5208955310498367,0.106,0.0,
+frcnn_r50_fpn,image,error_tol,n FP32 detections,0.7977324722468448,,,0.106,,
+frcnn_r50_fpn,detection,flip,local deviation,0.6178697854596769,,,0.04800390781118167,,45038.0
+frcnn_r50_fpn,detection,flip,score margin,0.9219803570117091,,,0.04800390781118167,,45038.0
+frcnn_r50_fpn,detection,flip,margin + size,0.9240736404073481,,,0.04800390781118167,,45038.0
+frcnn_r50_fpn,detection,flip,margin + size + deviation,0.9278511149204742,,,0.04800390781118167,,45038.0
+frcnn_r50_fpn,detection,flip_tol,local deviation,0.6003455819141164,,,0.0061503619166037565,,45038.0
+frcnn_r50_fpn,detection,flip_tol,score margin,0.8457791106669461,,,0.0061503619166037565,,45038.0
+frcnn_r50_fpn,detection,flip_tol,margin + size,0.8523135752605676,,,0.0061503619166037565,,45038.0
+frcnn_r50_fpn,detection,flip_tol,margin + size + deviation,0.8578233033414452,,,0.0061503619166037565,,45038.0
+yolov10s,image,error,head MRE_proj,0.4001096135072949,0.383511196280442,0.41685863077184443,0.3466,0.4332,
+yolov10s,image,error,n FP32 detections,0.71104689024219,,,0.3466,,
+yolov10s,image,error_tol,head MRE_proj,0.395766298047979,0.37111711376144807,0.4215357370585996,0.1022,0.4332,
+yolov10s,image,error_tol,n FP32 detections,0.5879396864437924,,,0.1022,,
+yolov10s,detection,flip,local deviation,0.5888954660284762,,,0.12749090514198838,,18417.0
+yolov10s,detection,flip,score margin,0.7383513024061588,,,0.12749090514198838,,18417.0
+yolov10s,detection,flip,margin + size,0.7585643227465712,,,0.12749090514198838,,18417.0
+yolov10s,detection,flip,margin + size + deviation,0.7683535324611082,,,0.12749090514198838,,18417.0
+yolov10s,detection,flip_tol,local deviation,0.6391976477984972,,,0.02899495031764131,,18417.0
+yolov10s,detection,flip_tol,score margin,0.5295769777796208,,,0.02899495031764131,,18417.0
+yolov10s,detection,flip_tol,margin + size,0.7030107894405605,,,0.02899495031764131,,18417.0
+yolov10s,detection,flip_tol,margin + size + deviation,0.7236756981134762,,,0.02899495031764131,,18417.0
+yolov10x,image,error,head MRE_proj,0.38967389272678166,0.37256090076706055,0.4062779522113719,0.2766,1.0,
+yolov10x,image,error,n FP32 detections,0.7699626232755221,,,0.2766,,
+yolov10x,image,error_tol,head MRE_proj,0.3952569845541262,0.3634911448524401,0.4271575967309501,0.0624,1.0,
+yolov10x,image,error_tol,n FP32 detections,0.6598841422726874,,,0.0624,,
+yolov10x,detection,flip,local deviation,0.5301934291622078,,,0.08339764834067281,,22027.0
+yolov10x,detection,flip,score margin,0.8631724798410744,,,0.08339764834067281,,22027.0
+yolov10x,detection,flip,margin + size,0.8663670902150851,,,0.08339764834067281,,22027.0
+yolov10x,detection,flip,margin + size + deviation,0.871566686969166,,,0.08339764834067281,,22027.0
+yolov10x,detection,flip_tol,local deviation,0.6723749795652774,,,0.013029463839832932,,22027.0
+yolov10x,detection,flip_tol,score margin,0.725639246207155,,,0.013029463839832932,,22027.0
+yolov10x,detection,flip_tol,margin + size,0.7791088217098494,,,0.013029463839832932,,22027.0
+yolov10x,detection,flip_tol,margin + size + deviation,0.800968205174232,,,0.013029463839832932,,22027.0

@@ -1,0 +1,18 @@
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Sensitivity of the deployed INT8 accuracy to the calibration sample}\label{tab:calibvar}
+\begin{tabular}{@{}lrrrrrrrr@{}}
+\toprule
+Model & $\bar\Gamma$ & Calibration images & Full set & Seed 1 & Seed 2 & Seed 3 & Range & Max $|\Delta|$ \\
+\midrule
+Faster R-CNN R50-FPN & 0.13 & 256 & 36.71 & 36.72 & 36.70 & 36.71 & 36.70--36.72 & 0.01 \\
+YOLOv10-S & 0.28 & 256 & 43.79 & 43.82 & 43.83 & 45.31 & 43.82--45.31 & 1.52 \\
+YOLOv10-X & 0.69 & 256 & 47.79 & 47.79 & 47.97 & 50.45 & 47.79--50.45 & 2.66 \\
+EfficientNet-B0 & 2.89 & 500 & 24.82 & 41.70 & 41.53 & 41.31 & 41.31--41.70 & 16.88 \\
+ &  & 250 & 24.82 & 41.66 & 41.39 & 40.09 & 40.09--41.66 & 16.83 \\
+DenseNet-121 & 0.90 & 500 & 57.36 & 58.44 & 58.66 & 58.47 & 58.44--58.66 & 1.30 \\
+ &  & 250 & 57.36 & 58.31 & 58.52 & 60.44 & 58.31--60.44 & 3.09 \\
+\botrule
+\end{tabular}
+\footnotetext{Entropy calibration on seeded random subsets of the calibration set (COCO train2017: 512 images; ImageNetV2 calibration split: 1\,000 images), same exclusions and deployment engines as the main results; accuracy on the full evaluation sets (COCO val2017 box mAP, ImageNetV2 top-1, \%). Full set: main result (Table~\ref{tab:accuracy}); recalibrating on the full set with the same code reproduces it. Max $|\Delta|$: largest deviation of a subset calibration from the full-set result.}
+\end{sidewaystable}

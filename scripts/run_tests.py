@@ -112,9 +112,6 @@ def tasks(cfg):
                 [det / f"{m}_fp8.json" for m in DETECTORS]
                 + [det / f"{m}_{p}_cls.npz" for m in ("efficientnet_b0", "densenet121") for p in ("fp32", "int8", "fp8")]))
     # Revision runs: batch size of the fleet scenario (six cameras) and calibration-sample sensitivity.
-    out.append(("benchmark_bs6", ["bash", "-c", f"{py} scripts/03_build_engines.py --batch-sizes 6 --precisions fp32 fp16 "
-                                  f"int8 fp8 && {py} scripts/04_benchmark.py --batch-sizes 6 --precisions fp32 fp16 int8 "
-                                  f"fp8 --out benchmark_bs6.csv"], []))
     out.append(("calibration_variability", [py, "scripts/29_calibration_variability.py"], []))
     out.append(("calibration_size_classifiers", ["bash", "-c", f"{py} scripts/29_calibration_variability.py --models "
                                   f"efficientnet_b0 densenet121 --fraction 1.0 --seeds 1 && {py} scripts/29_calibration_variability.py "
@@ -123,14 +120,11 @@ def tasks(cfg):
     out.append(("conv_only_placement", [py, "scripts/35_conv_only_placement.py"],
                 [results_dir(cfg, "calib_global") / "efficientnet_b0_global_thresholds.json"]))
     out.append(("selective_duplicates", [py, "scripts/38_selective_duplicates.py", "--ks", "20", "12"], []))
-    out.append(("nms_cost", [py, "scripts/37_nms_cost.py"], []))
-    out.append(("energy_graph", [py, "scripts/36_energy_graph.py"], []))
-    out.append(("usability_extra", ["bash", "-c", f"{py} scripts/39_build_extra.py && {py} scripts/04_benchmark.py "
-                                    f"--models densenet121 --precisions int8bnfp16 --batch-sizes 8 6 --out benchmark_extra.csv"
-                                    f" && {py} scripts/36_energy_graph.py --models densenet121 --precisions int8bnfp16"], []))
+    out.append(("topk_ablation", [py, "scripts/41_topk_ablation.py"], []))
     out.append(("scale_swap_efficientnet", [py, "scripts/31_scale_swap.py", "--model", "efficientnet_b0", "--seed", "1"],
                 [results_dir(cfg, "calib_variability") / "efficientnet_b0_s1_int8fp32.onnx"]))
-    # Runs last, only when every other task is done (see the main loop): clean rebuild + benchmark.
+    # Runs last, only when every other task is done (see the main loop): clean rebuild, latency and energy
+    # at batch sizes 1, 6 and 8, accuracy on the timed engines and all derived analyses.
     out.append(("final_benchmark", ["env", f"PY={py}", "bash", "scripts/final_benchmark.sh"], []))
     out.append(("model_stats", [py, "scripts/09_model_stats.py"],
                 [results_dir(cfg, "onnx") / f"{m}_int8.onnx" for m in ORDER]))
@@ -141,7 +135,8 @@ TEST_SCRIPTS = ("04_benchmark", "05_accuracy", "06_activations", "07_risk", "08_
                 "09_model_stats", "10_selective", "16_localization", "17_placement_ablation",
                 "20_label_free_selection", "21_robust_calibration", "22_bootstrap_ci",
                 "final_benchmark", "29_calibration_variability", "31_scale_swap", "34_global_entropy", "35_conv_only_placement",
-                "36_energy_graph", "37_nms_cost", "38_selective_duplicates")
+                "36_energy_graph", "37_nms_cost", "38_selective_duplicates",
+                "41_topk_ablation")
 
 
 def other_test_running():

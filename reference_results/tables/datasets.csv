@@ -1,0 +1,6 @@
+split,images,objects,objects_per_image,categories_present,small_pct,medium_pct,large_pct,images_without_objects,traffic_objects_pct,n_person,n_bicycle,n_car,n_motorcycle,n_bus,n_truck,n_traffic_light,n_stop_sign
+COCO train2017 calibration subset,512,3401.0,6.642578125,80,42.63451925904146,32.04939723610703,25.316083504851516,6.0,43.92825639517789,1079.0,31.0,199.0,50.0,15.0,27.0,84.0,9.0
+"COCO val2017 (accuracy, deviation-risk)",5000,36335.0,7.267,80,42.00908215219486,34.10485757534058,23.886060272464565,48.0,40.68253749827989,10777.0,314.0,1918.0,367.0,283.0,414.0,634.0,75.0
+"COCO val2017 analysis subset (activations, robustness)",500,3787.0,7.574,78,43.75495114866649,33.08687615526802,23.15817269606549,3.0,40.85027726432532,1115.0,26.0,198.0,55.0,22.0,52.0,73.0,6.0
+ImageNetV2 calibration,1000,,,632,,,,,,,,,,,,,
+ImageNetV2 evaluation,9000,,,1000,,,,,,,,,,,,,

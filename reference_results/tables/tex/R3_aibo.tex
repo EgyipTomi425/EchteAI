@@ -1,0 +1,37 @@
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{AIBO fleet scenario: annual inference energy, cost, emissions and break-even error penalty per precision}\label{tab:aibo}
+\begin{tabular}{@{}llrrrrrrr@{}}
+\toprule
+Model & Precision & Energy & Cost & CO$_2$ & \multicolumn{2}{c}{Saved vs FP32} & Critical errors & Break-even \\
+\cmidrule{6-7}
+ & & (MWh/yr) & (kEUR/yr) & (t/yr) & (kEUR/yr) & (t CO$_2$/yr) & (per $10^3$ images) & (\textmu EUR/error) \\
+\midrule
+Faster R-CNN R50-FPN & FP32 & 1136 & 209 & 275 & -- & -- & -- & -- \\
+ & FP16 & 161 & 30 & 39 & 179 & 236 & 1.6 & 88.8 \\
+ & INT8 & 99 & 18 & 24 & 191 & 251 & 38.4 & 3.9 \\
+ & FP8 & 144 & 27 & 35 & 182 & 240 & 44.4 & 3.3 \\
+\midrule
+YOLOv10-S & FP32 & 146 & 27 & 35 & -- & -- & -- & -- \\
+ & FP16 & 39 & 7 & 9 & 20 & 26 & 0.0 & -- \\
+ & INT8 & 23 & 4 & 6 & 22 & 30 & 9.6 & 1.9 \\
+ & FP8 & 34 & 6 & 8 & 20 & 27 & 4.6 & 3.5 \\
+\midrule
+YOLOv10-X & FP32 & 885 & 163 & 214 & -- & -- & -- & -- \\
+ & FP16 & 209 & 38 & 51 & 124 & 164 & 0.2 & 492 \\
+ & INT8 & 104 & 19 & 25 & 144 & 189 & 12.8 & 8.9 \\
+ & FP8 & 153 & 28 & 37 & 134 & 177 & 2.8 & 38.1 \\
+\midrule
+EfficientNet-B0 & FP32 & 17 & 3 & 4 & -- & -- & -- & -- \\
+ & FP16 & 8 & 1 & 2 & 2 & 2 & 3.4 & 0.4 \\
+ & INT8 & 5 & 1 & 1 & 2 & 3 & 718.8 & 0.0025 \\
+ & FP8 & 11 & 2 & 3 & 1 & 2 & 76.7 & 0.013 \\
+\midrule
+DenseNet-121 & FP32 & 59 & 11 & 14 & -- & -- & -- & -- \\
+ & FP16 & 28 & 5 & 7 & 6 & 8 & 3.0 & 1.5 \\
+ & INT8 & 16 & 3 & 4 & 8 & 10 & 239.3 & 0.026 \\
+ & FP8 & 16 & 3 & 4 & 8 & 10 & 60.8 & 0.1 \\
+\botrule
+\end{tabular}
+\footnotetext{1\,000 vehicles, 6 cameras at 10 Hz, 16 h/day; measured gross GPU energy per image at batch size 6 (NVIDIA H200), i.e.\ the synchronised frames of all cameras of a vehicle; electricity price 0.1837 EUR/kWh and grid intensity 242 g CO$_2$/kWh. Critical errors: FP32 road-user detections that vanish in the deployed engine (score-tolerant definition); classifiers: top-1 disagreements with FP32. Break-even: penalty per critical error at which the precision costs as much as FP32.}
+\end{sidewaystable}

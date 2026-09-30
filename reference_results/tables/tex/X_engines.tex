@@ -1,0 +1,37 @@
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Composition and memory traffic per inference of the batch-1 TensorRT engines (engine inspector)}\label{tab:engines}
+\begin{tabular}{@{}llrrrrrrrr@{}}
+\toprule
+Model & Precision & Kernels & Reformats & \multicolumn{3}{c}{Convolutions executed in} & Activations & Weights & Traffic \\
+\cmidrule{5-7}
+ & & & & INT8 & FP8 & FP16 & (MB) & (MB) & vs FP32 \\
+\midrule
+Faster R-CNN R50-FPN & FP32 & 89 & 23 & 0 & 0 & 0 & 3021 & 107.3 & 1.00 \\
+ & FP16 & 72 & 4 & 0 & 0 & 61 & 1355 & 53.7 & 0.45 \\
+ & INT8 & 75 & 4 & 61 & 0 & 0 & 772 & 27.0 & 0.26 \\
+ & FP8 & 90 & 3 & 0 & 60 & 1 & 1201 & 27.0 & 0.39 \\
+\midrule
+YOLOv10-S & FP32 & 214 & 37 & 0 & 0 & 0 & 909 & 29.0 & 1.00 \\
+ & FP16 & 168 & 42 & 0 & 0 & 88 & 374 & 14.5 & 0.41 \\
+ & INT8 & 173 & 57 & 86 & 0 & 1 & 168 & 7.4 & 0.19 \\
+ & FP8 & 187 & 0 & 0 & 70 & 18 & 282 & 7.4 & 0.31 \\
+\midrule
+YOLOv10-X & FP32 & 421 & 68 & 0 & 0 & 0 & 4042 & 117.9 & 1.00 \\
+ & FP16 & 326 & 60 & 0 & 0 & 176 & 1585 & 58.9 & 0.40 \\
+ & INT8 & 303 & 81 & 174 & 0 & 1 & 559 & 29.9 & 0.14 \\
+ & FP8 & 363 & 0 & 0 & 110 & 66 & 1103 & 30.0 & 0.27 \\
+\midrule
+EfficientNet-B0 & FP32 & 165 & 1 & 0 & 0 & 0 & 194 & 21.1 & 1.00 \\
+ & FP16 & 134 & 1 & 0 & 0 & 82 & 83 & 10.5 & 0.44 \\
+ & INT8 & 120 & 3 & 81 & 0 & 1 & 22 & 6.8 & 0.14 \\
+ & FP8 & 190 & 0 & 0 & 50 & 32 & 62 & 6.9 & 0.32 \\
+\midrule
+DenseNet-121 & FP32 & 733 & 545 & 0 & 0 & 0 & 257 & 32.2 & 1.00 \\
+ & FP16 & 725 & 536 & 0 & 0 & 121 & 163 & 16.1 & 0.62 \\
+ & INT8 & 744 & 556 & 120 & 0 & 1 & 67 & 9.3 & 0.26 \\
+ & FP8 & 194 & 2 & 0 & 119 & 2 & 65 & 9.3 & 0.26 \\
+\botrule
+\end{tabular}
+\footnotetext{Kernels: launched layers after fusion. Reformats: layout or data-type conversions, including the copies that implement concatenations. Convolutions executed in: arithmetic precision of each convolution from its kernel name and input data type (FP32 engines: none of the three). Traffic: bytes of every layer input and output in its stored data type plus the deployed weights, i.e.\ DRAM traffic without cross-layer caching.}
+\end{sidewaystable}

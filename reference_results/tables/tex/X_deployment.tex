@@ -1,0 +1,28 @@
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Deployment options per network on the H200 (batch size 8)}\label{tab:deployment}
+\begin{tabular}{@{}llrrrrrr@{}}
+\toprule
+Model & Configuration & Accuracy (\%) & $\Delta$ vs FP32 & p50 bs8 (ms) & Energy bs8 (mJ/img) & Energy vs FP32 & Energy vs FP16 \\
+\midrule
+Faster R-CNN R50-FPN & FP16 & 36.9 & 0.0 & 5.09 & 442.7 & $-$86\% & 0\% \\
+ & INT8 & 36.7 & $-$0.2 & 3.46 & 280.8 & $-$91\% & $-$37\% \\
+\midrule
+YOLOv10-S & FP16 & 46.0 & 0.0 & 1.83 & 108.8 & $-$73\% & 0\% \\
+ & INT8 & 43.8 & $-$2.2 & 1.47 & 63.3 & $-$85\% & $-$42\% \\
+ & FP8 & 45.6 & $-$0.4 & 1.86 & 96.7 & $-$76\% & $-$11\% \\
+\midrule
+YOLOv10-X & FP16 & 54.0 & 0.0 & 6.90 & 581.6 & $-$77\% & 0\% \\
+ & FP8 & 53.9 & $-$0.1 & 5.82 & 429.9 & $-$83\% & $-$26\% \\
+ & INT8 + NMS & 52.4 & $-$1.6 & 5.16 & 295.3 & $-$88\% & $-$49\% \\
+\midrule
+EfficientNet-B0 & FP16 & 65.8 & 0.0 & 0.66 & 20.6 & $-$55\% & 0\% \\
+ & FP8 & 65.4 & $-$0.4 & 0.83 & 26.0 & $-$43\% & $+$26\% \\
+\midrule
+DenseNet-121 & FP16 & 62.0 & 0.0 & 2.39 & 70.5 & $-$54\% & 0\% \\
+ & FP8 & 61.7 & $-$0.3 & 1.23 & 40.9 & $-$73\% & $-$42\% \\
+ & INT8, BN in FP16 & 61.6 & $-$0.4 & 2.46 & 66.3 & $-$56\% & $-$6\% \\
+\botrule
+\end{tabular}
+\footnotetext{Accuracy: COCO val2017 box mAP or ImageNetV2 top-1 of the deployed engine. INT8 + NMS: class-wise NMS appended to the engine output (its GPU time is included in the latency; its energy is not). INT8, BN in FP16: the placement selected by the label-free criteria (Table~\ref{tab:placement}). Energy: gross GPU energy per image with CUDA graphs.}
+\end{sidewaystable}

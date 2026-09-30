@@ -1,0 +1,19 @@
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{INT8 accuracy under different range-setting procedures}\label{tab:calibmethods}
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+Model & FP32 & \multicolumn{3}{c}{INT8, toolchain entropy calibration} & INT8, order-independent & FP8 \\
+\cmidrule{3-5}
+ & & full set & subsets (range) & max $|\Delta|$ & entropy calibration & \\
+\midrule
+Faster R-CNN R50-FPN & 36.95 & 36.71 & 36.70--36.72 & 0.01 & 36.74 & 36.58 \\
+YOLOv10-S & 46.03 & 43.79 & 43.82--45.31 & 1.52 & 35.80 & 45.62 \\
+YOLOv10-X & 54.00 & 47.79 & 47.79--50.45 & 2.66 & 37.07 & 53.85 \\
+EfficientNet-B0 & 65.79 & 24.82 & 40.09--41.70 & 16.88 & 0.09 & 65.40 \\
+DenseNet-121 & 62.03 & 57.36 & 58.31--60.44 & 3.09 & 60.01 & 61.71 \\
+EfficientNet-B0, convolution inputs only & 65.79 & 23.84 & -- & -- & 54.91 & -- \\
+\botrule
+\end{tabular}
+\footnotetext{Toolchain: incremental entropy calibration of ModelOpt on ONNX Runtime (one image per step), full calibration set in stored order (main results) and seeded random subsets, which differ in their first image (Table~\ref{tab:calibvar}). Order-independent: global 2048-bin histogram with NVIDIA's reference KL search (Supplementary Section~\ref{sec:supp-quant}), applied to the same quantizers. Convolution inputs only: quantizers on the inputs of convolutions and matrix multiplications, as in~\cite{wu2020integer}. COCO val2017 box mAP and ImageNetV2 top-1 (\%); FP8: max calibration.}
+\end{sidewaystable}

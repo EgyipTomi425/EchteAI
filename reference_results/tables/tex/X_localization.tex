@@ -1,0 +1,33 @@
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Monocular distance error caused by the FP32-to-deployed box shift (COCO val2017, 5\,000 images)}\label{tab:localization}
+\begin{tabular}{@{}lllrrrrrr@{}}
+\toprule
+Model & Precision & Class & Matched & \multicolumn{2}{c}{Bottom-edge shift (\% of box height)} & \multicolumn{2}{c}{Distance error (\%)} & $>5$\% \\
+\cmidrule{5-6}\cmidrule{7-8}
+ & & & detections & median & p95 & p95 & p99 & (\% of boxes) \\
+\midrule
+Faster R-CNN R50-FPN & FP16 & person & 14\,046 & 0.01 & 0.08 & 0.08 & 0.66 & 0.3 \\
+ & FP16 & car & 2\,433 & 0.01 & 0.08 & 0.07 & 0.76 & 0.2 \\
+ & INT8 & person & 13\,557 & 0.38 & 5.02 & 5.17 & 14.22 & 5.2 \\
+ & INT8 & car & 2\,317 & 0.52 & 5.67 & 5.16 & 14.16 & 5.4 \\
+ & FP8 & person & 13\,348 & 0.50 & 5.90 & 6.08 & 16.87 & 6.4 \\
+ & FP8 & car & 2\,272 & 0.69 & 6.27 & 5.70 & 14.25 & 5.6 \\
+\midrule
+YOLOv10-S & FP16 & person & 6\,508 & 0.05 & 0.22 & 0.23 & 0.43 & 0.0 \\
+ & FP16 & car & 914 & 0.12 & 0.59 & 0.54 & 0.84 & 0.0 \\
+ & INT8 & person & 6\,084 & 0.17 & 1.15 & 1.18 & 3.41 & 0.6 \\
+ & INT8 & car & 845 & 0.31 & 1.37 & 1.25 & 2.20 & 0.1 \\
+ & FP8 & person & 6\,219 & 0.23 & 1.27 & 1.31 & 2.56 & 0.4 \\
+ & FP8 & car & 851 & 0.51 & 1.83 & 1.67 & 2.61 & 0.1 \\
+\midrule
+YOLOv10-X & FP16 & person & 7\,624 & 0.05 & 0.27 & 0.28 & 0.53 & 0.0 \\
+ & FP16 & car & 1\,205 & 0.14 & 0.68 & 0.62 & 0.94 & 0.0 \\
+ & INT8 & person & 7\,273 & 0.22 & 1.74 & 1.80 & 4.64 & 0.9 \\
+ & INT8 & car & 1\,087 & 0.36 & 1.93 & 1.75 & 3.00 & 0.1 \\
+ & FP8 & person & 7\,405 & 0.16 & 0.81 & 0.84 & 1.68 & 0.1 \\
+ & FP8 & car & 1\,154 & 0.35 & 1.53 & 1.39 & 2.26 & 0.0 \\
+\botrule
+\end{tabular}
+\footnotetext{Same-class matches (IoU $\geq 0.5$) of FP32 detections with a score of at least 0.5. Distance error from Eq.~\eqref{eq:distance} for a camera height of 1.65\,m and object heights of 1.7\,m (person) and 1.5\,m (car).}
+\end{sidewaystable}
