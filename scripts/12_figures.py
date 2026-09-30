@@ -2,6 +2,7 @@
 import json
 import re
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -408,7 +409,7 @@ def fig_robustness(cfg, out):
     if not path.exists():
         return
     r = pd.read_csv(path)
-    acc = r[r.precision.isin(["fp32", "fp16", "int8"])]
+    acc = r[r.precision.isin(["fp32", "fp16", "int8", "fp8"])]
     models = [m for m in ORDER if m in set(acc.model)]
     conds = [c for c in acc.condition.unique() if c != "clean"]
     fig, axes = plt.subplots(len(models), len(conds), figsize=(1.9 * len(conds), 1.9 * len(models)),
@@ -417,8 +418,10 @@ def fig_robustness(cfg, out):
         clean = acc[(acc.model == m) & (acc.condition == "clean")]
         for j, c in enumerate(conds):
             ax = axes[i][j]
-            for p in ("fp32", "fp16", "int8"):
+            for p in ("fp32", "fp16", "int8", "fp8"):
                 g = acc[(acc.model == m) & (acc.condition == c) & (acc.precision == p)].sort_values("severity")
+                if g.empty:
+                    continue
                 base = clean[clean.precision == p].mAP
                 xs = [0] + g.severity.tolist()
                 ys = ([base.iloc[0]] if len(base) else [np.nan]) + g.mAP.tolist()
@@ -430,8 +433,13 @@ def fig_robustness(cfg, out):
                 ax.set_ylabel(f"{MODEL_LABELS[m]}\nmAP (%)")
             if i == len(models) - 1:
                 ax.set_xlabel("severity")
-    axes[0][0].legend(loc="lower left", fontsize=6)
-    fig.text(0.5, -0.01, "FP16 coincides with FP32 in every panel.", ha="center", fontsize=7, color=INK_2)
+    handles = {}
+    for ax in axes.flat:
+        for h, l in zip(*ax.get_legend_handles_labels()):
+            handles.setdefault(l, h)
+    axes[0][0].legend(handles.values(), handles.keys(), loc="lower left", fontsize=6)
+    fig.text(0.5, -0.01, "FP16 coincides with FP32 in every panel; FP8 was evaluated for YOLOv10 under fog and contrast.",
+             ha="center", fontsize=7, color=INK_2)
     save(fig, out / "S_robustness")
 
 
@@ -590,28 +598,31 @@ def fig_aibo(cfg, out):
     focus = "yolov10x" if "yolov10x" in models else models[0]
     g = a[(a.model == focus) & a.precision.isin(precisions)].set_index("precision")
     n_inf = g.inferences_per_year.iloc[0]
-    lam = np.geomspace(1e-9, 1e-4, 400)
+    lam = np.geomspace(1e-9, 1e-2, 600)
     costs = {p: (g.loc[p, "eur_per_year_ref"] + g.loc[p, "critical_per_image"] * n_inf * lam) / 1000
              for p in precisions if p in g.index and pd.notna(g.loc[p, "critical_per_image"])}
     for p, c in costs.items():
         ax_b.plot(lam * 1e6, c, color=PRECISION_COLORS[p], linewidth=1.4, label=PRECISION_LABELS[p])
     env = np.min(np.vstack(list(costs.values())), axis=0)
-    ax_b.plot(lam * 1e6, env, color=INK_2, linewidth=3.0, alpha=0.25, zorder=0)
+    ax_b.plot(lam * 1e6, env, color=INK_2, linewidth=5.0, alpha=0.3, zorder=0, solid_capstyle="butt",
+              label="lower envelope")
     best = [min(costs, key=lambda p: costs[p][i]) for i in range(len(lam))]
     switch = [(lam[i], best[i]) for i in range(1, len(lam)) if best[i] != best[i - 1]]
     for l_, p in switch:
         ax_b.axvline(l_ * 1e6, color=MUTED, linewidth=0.7, linestyle=":")
-        ax_b.annotate(f"{PRECISION_LABELS[p]} optimal above {l_ * 1e6:.2g}", (l_ * 1e6, 0.97),
+        ax_b.annotate(f"{PRECISION_LABELS[p]} optimal above {l_ * 1e6:.0f}" if l_ * 1e6 >= 10 else
+                      f"{PRECISION_LABELS[p]} optimal above {l_ * 1e6:.2g}", (l_ * 1e6, 0.97),
                       xycoords=("data", "axes fraction"), textcoords="offset points", xytext=(3, 0), fontsize=6.5,
                       color=INK_2, rotation=90, va="top")
     ax_b.set_xscale("log")
     ax_b.set_yscale("log")
+    ax_b.set_ylim(0.6 * env.min(), 8 * max(c[0] for c in costs.values()))
     ax_b.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:g}"))
     ax_b.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:g}"))
     ax_b.set_xlabel("penalty per critical error $\\lambda$ ($\\mu$EUR)")
     ax_b.set_ylabel("total cost (kEUR per year)")
     ax_b.set_title(f"d  cost-optimal precision, {MODEL_LABELS[focus]}", loc="left")
-    ax_b.legend(fontsize=7, loc="upper left")
+    ax_b.legend(fontsize=6.5, loc="lower right")
     fig.tight_layout(h_pad=1.6)
     save(fig, out / "R6_aibo")
 
@@ -1029,9 +1040,10 @@ def fig_conditions(cfg, out, image_id=336232, severity=3):
 def fig_energy_surface(cfg, out, name="efficientnet_b0", strategy="pepai_iter"):
     """Relative depth x measured energy per image x median MRE_proj over the selective variants.
 
-    Variants of the iterative strategy (plus the fully quantized base), ordered by their measured energy;
-    depth is binned (40 bins) and MRE_proj shown on a logarithmic axis so that the few very fragile
-    layers do not hide the rest of the surface."""
+    Variants of the iterative strategy (plus the fully quantized base), ordered by their measured energy
+    (which grows monotonically with k); depth is binned (16 bins) and MRE_proj shown on a logarithmic axis
+    so that the few very fragile layers do not hide the rest of the surface. Faces are coloured by the
+    deviation itself (no lighting), so that the colour bar can be read directly."""
     sel_p = results_dir(cfg, "tables") / "selective.csv"
     if not sel_p.exists():
         return
@@ -1040,31 +1052,39 @@ def fig_energy_surface(cfg, out, name="efficientnet_b0", strategy="pepai_iter"):
               & ((sel.strategy == strategy) | ((sel.strategy == "pepai") & (sel.k == 0)))]
     d = results_dir(cfg, "selective")
     tag = {"pepai": "pepai_k", "pepai_iter": "iter_k"}
+    bins = 16
     frames = []
     for _, r in sel.iterrows():
         f = d / f"{name}_{tag[r.strategy]}{int(r.k)}_layers.csv"
         if f.exists():
             L = pd.read_csv(f)
             L = L[L.op == "Conv"].sort_values("order")
-            L["depth"] = np.minimum((np.arange(len(L)) / len(L) * 40).astype(int), 39) / 39
+            L["depth"] = np.minimum((np.arange(len(L)) / len(L) * bins).astype(int), bins - 1) / (bins - 1)
             frames.append(L.assign(energy=r.energy_mj_per_img_bs8, k=int(r.k)))
     if len(frames) < 3:
         return
     df = pd.concat(frames)
     piv = df.pivot_table(index=["energy", "k"], columns="depth", values="mre_proj", aggfunc="median").sort_index()
-    piv = piv.T.rolling(3, center=True, min_periods=1).median().T
-    z = np.log10(np.clip(piv.values * 100, 0.1, None))
+    z = np.log10(np.clip(piv.values * 100, 0.3, None))
     X, Y = np.meshgrid(piv.columns.values, piv.index.get_level_values("energy").values)
     fig = plt.figure(figsize=(6.4, 4.8))
     ax = fig.add_subplot(1, 1, 1, projection="3d")
-    ax.plot_surface(X, Y, z, cmap=SEQUENTIAL, linewidth=0.15, edgecolor=BLUE_700, alpha=0.95, rstride=1, cstride=1)
+    norm = mpl.colors.Normalize(vmin=np.log10(0.3), vmax=np.log10(30))
+    cmap = mpl.colormaps[SEQUENTIAL] if isinstance(SEQUENTIAL, str) else SEQUENTIAL
+    ax.plot_surface(X, Y, z, facecolors=cmap(norm(z)), shade=False, linewidth=0.25, edgecolor="white",
+                    rstride=1, cstride=1, antialiased=True)
     ticks = [0.3, 1, 3, 10, 30]
     ax.set_zticks(np.log10(ticks), [f"{t:g}" for t in ticks])
+    ax.set_zlim(np.log10(0.3), np.log10(60))
     ax.set_xlabel("relative depth")
     ax.set_ylabel("GPU energy per image (mJ)")
     ax.set_zlabel("median MRE$_{proj}$ (%)")
     ax.set_title(f"{MODEL_LABELS[name]}: iterative selective-precision variants", fontsize=9)
-    ax.view_init(elev=22, azim=-35)
+    ax.view_init(elev=28, azim=-128)
+    sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+    cb = fig.colorbar(sm, ax=ax, shrink=0.55, pad=0.12)
+    cb.set_ticks(np.log10(ticks), labels=[f"{t:g}" for t in ticks])
+    cb.set_label("MRE$_{proj}$ (%)", fontsize=8)
     save(fig, out / "R3_energy_surface")
 
 if __name__ == "__main__":

@@ -42,7 +42,7 @@ aibo:
   fps: 10
   hours_per_day: 16
   days_per_year: 365
-  batch: 8                               # measured batch size closest to the synchronised frames of all cameras
+  batch: 6                               # synchronised frames of the six cameras of a vehicle (benchmark_bs6.csv)
   # Reference: EU non-household average, 2nd half 2025 (Eurostat news release, 8 May 2026).
   electricity_eur_per_kwh: [0.10, 0.1837, 0.30]  # low / reference / high
   # Reference: EU electricity emission intensity 2023 (Ember, European Electricity Review 2024).

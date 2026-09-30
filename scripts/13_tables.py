@@ -225,7 +225,7 @@ def table_aibo(cfg, out):
           "emissions and break-even error penalty per precision", "tab:aibo",
           f"{a['fleet_size']:,} vehicles, {a['cameras_per_vehicle']} cameras at {a['fps']} Hz, "
           f"{a['hours_per_day']} h/day; measured gross GPU energy per image at batch size {a['batch']} (NVIDIA H200), "
-          f"which approximates batched processing of the synchronised camera frames of a vehicle; electricity price {a['electricity_eur_per_kwh'][1]} EUR/kWh and grid "
+          f"i.e.\\ the synchronised frames of all cameras of a vehicle; electricity price {a['electricity_eur_per_kwh'][1]} EUR/kWh and grid "
           f"intensity {a['grid_gco2_per_kwh'][1]} g CO$_2$/kWh. Critical errors: FP32 road-user detections that "
           "vanish in the deployed engine (score-tolerant definition); classifiers: top-1 disagreements with FP32. "
           "Break-even: penalty per critical error at which the precision costs as much as FP32."
@@ -435,10 +435,38 @@ def table_localization(cfg, out):
           "1.5\\,m (car).")
 
 
+def table_calibration_variability(cfg, out):
+    """INT8 accuracy for three seeded half-size calibration sets against the full calibration set."""
+    p = results_dir(cfg, "tables") / "calibration_variability.csv"
+    acc_p = results_dir(cfg, "tables") / "accuracy.csv"
+    if not (p.exists() and acc_p.exists()):
+        return
+    v = pd.read_csv(p)
+    acc = pd.read_csv(acc_p).set_index(["model", "precision"])
+    body = [r"Model & Calibration images & Full set & Seed 1 & Seed 2 & Seed 3 & Mean $\pm$ SD & Max $|\Delta|$ \\",
+            r"\midrule"]
+    for m in [m for m in ORDER if m in set(v.model)]:
+        g = v[v.model == m].sort_values("seed")
+        metric = "top1" if SPECS_TASK[m] == "cls" else "mAP"
+        vals = g[metric].values * 100
+        full = acc.loc[(m, "int8"), metric] * 100 if (m, "int8") in acc.index else float("nan")
+        seeds = [f"{x:.2f}" for x in vals] + ["--"] * (3 - len(vals))
+        sd = vals.std(ddof=1) if len(vals) > 1 else float("nan")
+        body.append(f"{MODEL_LABELS[m]} & {int(g.n_calib.iloc[0])} & {full:.2f} & " + " & ".join(seeds)
+                    + f" & {vals.mean():.2f} $\\pm$ {sd:.2f} & {abs(vals - full).max():.2f} \\\\")
+    write(out / "X_calibration.tex", body, "lrrrrrrr",
+          "Sensitivity of the deployed INT8 accuracy to the calibration sample", "tab:calibvar",
+          "Entropy calibration on three seeded random halves of the calibration set (COCO train2017 or ImageNetV2 "
+          "calibration split), same exclusions and deployment engine as the main results; accuracy on the full "
+          "evaluation sets (COCO val2017 box mAP, ImageNetV2 top-1, \\%). Max $|\\Delta|$: largest deviation of a "
+          "half-set calibration from the full-set result.")
+
+
 if __name__ == "__main__":
     cfg = load_config()
     out = results_dir(cfg, "tables", "tex")
     for f in (table_models, table_datasets, table_energy_reference, table_placement, table_accuracy_speed, table_layer_stats, table_aibo,
-              table_hardware, table_engines, table_localization, table_propagation, table_selective):
+              table_hardware, table_engines, table_localization, table_propagation, table_selective,
+              table_calibration_variability):
         f(cfg, out)
         print("done:", f.__name__, flush=True)
