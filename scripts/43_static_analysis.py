@@ -137,14 +137,18 @@ def leaf_modules(model):
 
 def following_activation(leaves, i, name, model):
     """Activation applied to the output of the BN at leaves[i] (next leaf, or the parent's shared ReLU)."""
+    parent = model.get_submodule(name.rsplit(".", 1)[0]) if "." in name else model
+    kind = type(parent).__name__
+    if kind in ("Bottleneck", "BasicBlock") or name.endswith("downsample.1"):
+        # torchvision ResNet: the shared ReLU follows bn1 (and bn2 of a Bottleneck); the last BN of the block and
+        # the downsample BN are added to the shortcut before the ReLU, so their own output is not rectified
+        last = "bn3" if kind == "Bottleneck" else "bn2"
+        return "identity" if name.endswith(last) or name.endswith("downsample.1") else "relu"
     if i + 1 < len(leaves):
         nxt = leaves[i + 1][1]
         for cls, act in ACTIVATIONS.items():
             if isinstance(nxt, cls):
                 return act
-    parent = model.get_submodule(name.rsplit(".", 1)[0]) if "." in name else model
-    if type(parent).__name__ in ("Bottleneck", "BasicBlock") and not name.endswith(("bn3", "downsample.1")):
-        return "relu"       # torchvision ResNet: one ReLU module applied after bn1 and bn2 in forward()
     return "identity"
 
 
@@ -249,31 +253,41 @@ def scenarios(s, layers, acts):
             ("INT8, per-tensor weights", add(acts.sqnr_int8_db, layers.w_int8_per_tensor_db)),
             ("FP8 E4M3", add(acts.sqnr_fp8_db, layers.w_fp8_db)),
             ("FP16", add(np.full(len(acts), 73.66), np.full(len(layers), 73.66)))]
-    est = None
+    refs = []
     from pepai.config import CODE_ROOT
     ref = CODE_ROOT / "reference_results" / "tables"
     if (ref / "prediction.csv").exists() and (ref / "static_analysis.csv").exists():
         pred = pd.read_csv(ref / "prediction.csv").set_index("model")
         st = pd.read_csv(ref / "static_analysis.csv").set_index("model")
-        both = [m for m in pred.index if m in st.index and m != s["model"]]
-        x, y = st.loc[both, "static_sqnr_add_int8_db"].values, np.log10(pred.loc[both, "int8_rel_loss"].values)
-        b, a = np.polyfit(x, y, 1)
-        est = 100 * 10 ** (a + b * s["static_sqnr_add_int8_db"])
-    return rows, est
+        for m in [m for m in pred.index if m in st.index and m != s["model"]]:
+            refs.append((m, float(st.loc[m, "static_sqnr_add_int8_db"]), float(100 * pred.loc[m, "int8_rel_loss"])))
+        refs.sort(key=lambda r: -r[1])
+    return rows, refs
 
 
 def report_scenarios(s, layers, acts):
-    rows, est = scenarios(s, layers, acts)
+    rows, refs = scenarios(s, layers, acts)
     print("  scenarios    static SQNR_add with weights (higher = less noise at the head input):")
     for label, v in rows:
         print(f"                 {label:28s} {v:6.1f} dB")
-    if est is not None:
-        print(f"  INT8 loss    ~{est:.1f}% relative accuracy loss, order of magnitude only (per-tensor activation "
-              f"scales, per-channel weights; leave-one-out error up to x13 on the five article networks).")
-    print("               FP8: every network of the article stayed within 1% of FP32; FP16: lossless (<0.1%).")
-    print("               For a loss estimate within about x2: one measurement on ~100 images with "
-          "44_validate_static.py --images <folder>.")
-    return rows, est
+    if refs:
+        v = s["static_sqnr_add_int8_db"]
+        print(f"  references   static INT8 SQNR_add of this network: {v:.1f} dB. Measured networks of the article "
+              f"(static SQNR_add, measured relative INT8 loss with TensorRT):")
+        placed = False
+        for m, x, loss in refs:
+            if not placed and v >= x:
+                print(f"                 --> {s['model']:24s} {v:5.1f} dB")
+                placed = True
+            print(f"                     {m:24s} {x:5.1f} dB   {loss:5.1f}%")
+        if not placed:
+            print(f"                 --> {s['model']:24s} {v:5.1f} dB")
+        print("               The static analysis ranks networks (Spearman 0.9 on the five) but does not see how a "
+              "network propagates the noise;")
+        print("               it gives no accuracy number. For the relative loss: one measurement of the quantized "
+              "head input")
+        print("               (42_predict_int8.py, within about x2) or a direct check (44_validate_static.py).")
+    return rows, refs
 
 
 def load(name, cfg):
@@ -311,10 +325,9 @@ def main():
         layers, acts, bns, extra = analyse(model, rng)
         s = summarise(name, layers, acts, bns, extra)
         report(s, layers, acts, bns)
-        sc, est = report_scenarios(s, layers, acts)
+        sc, _ = report_scenarios(s, layers, acts)
         s.update({f"scenario_{lab.split(',')[0].split()[0].lower()}{'_pt' if 'per-tensor' in lab else ''}_db": v
                   for lab, v in sc})
-        s["int8_loss_estimate_pct"] = est
         layers.to_csv(out / f"{name}_weights.csv", index=False)
         acts.to_csv(out / f"{name}_activations.csv", index=False)
         bns.to_csv(out / f"{name}_bn_gain.csv", index=False)
