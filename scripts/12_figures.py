@@ -608,8 +608,19 @@ def fig_aibo(cfg, out):
     env = np.min(np.vstack(list(costs.values())), axis=0)
     ax_b.plot(lam * 1e6, env, color=INK_2, linewidth=5.0, alpha=0.3, zorder=0, solid_capstyle="butt",
               label="lower envelope")
-    best = [min(costs, key=lambda p: costs[p][i]) for i in range(len(lam))]
-    switch = [(lam[i], best[i]) for i in range(1, len(lam)) if best[i] != best[i - 1]]
+    # Exact switch points of the lower envelope of the cost lines a_p + b_p * lambda (a grid would place them
+    # one grid step late): starting from the cheapest precision at lambda = 0, move to the line with a smaller
+    # error slope that it crosses first.
+    lines = {p: (g.loc[p, "eur_per_year_ref"], g.loc[p, "critical_per_image"] * n_inf) for p in costs}
+    cur = min(lines, key=lambda p: lines[p])
+    switch = []
+    while True:
+        a0, b0 = lines[cur]
+        cross = [((lines[q][0] - a0) / (b0 - lines[q][1]), q) for q in lines if lines[q][1] < b0]
+        if not cross:
+            break
+        l_, cur = min(cross)
+        switch.append((l_, cur))
     for l_, p in switch:
         ax_b.axvline(l_ * 1e6, color=MUTED, linewidth=0.7, linestyle=":")
         ax_b.annotate(f"{PRECISION_LABELS[p]} optimal above {l_ * 1e6:.0f}" if l_ * 1e6 >= 10 else
@@ -918,7 +929,7 @@ def fig_noise_validation(cfg, out):
     ax_b.set_ylim(*lim)
     ax_b.set_xlabel("predicted from FP32 statistics, $\\bar\\Gamma=1$ (dB)")
     ax_b.set_ylabel("measured head-input SQNR (dB)")
-    ax_b.set_title("b  additive model of Proposition 1", loc="left")
+    ax_b.set_title("b  additive model of Proposition 3", loc="left")
     ax_b.legend(fontsize=7, loc="upper left")
     fig.tight_layout()
     save(fig, out / "S_noise_validation")
@@ -1009,7 +1020,7 @@ def fig_static_scale(cfg, out, models=("yolov10s", "yolov10x"), severities=(1, 3
     handles, labels = axes[0][0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", ncol=len(severities), fontsize=7, bbox_to_anchor=(0.5, 1.04))
     fig.text(0.5, -0.01, "lines: measured change of the layer SQNR (cumulative deviation); markers: predicted change of "
-             "the noise injected at the layer input (Eq. static with the measured activation attenuation)",
+             "the noise injected at the layer input (Eq. (8) with the measured activation attenuation)",
              ha="center", fontsize=7, color=INK_2)
     fig.tight_layout()
     pd.DataFrame(rows).to_csv(results_dir(cfg, "tables") / "static_scale.csv", index=False)

@@ -176,7 +176,7 @@ if __name__ == "__main__":
             if len(ok) > 5:
                 rho = spearmanr(-ok.sqnr_inj_db, ok.sensitivity_db)
                 summary.append({"model": name, "n_quantizers": len(df), "n_linked": len(ok),
-                                # Proposition 1 with all propagation factors set to one
+                                # Proposition 3 with all propagation factors set to one
                                 "additive_gamma1_sqnr_db": -10 * np.log10(np.sum(
                                     10 ** (-df.sqnr_inj_db[df.upstream_of_head] / 10))),
                                 "n_upstream": int(df.upstream_of_head.sum()),

@@ -9,7 +9,7 @@ Strategies
   random      seeded random subsets of the same sizes (control)
   depthwise   all depthwise convolutions (architecture heuristic, control)
   noise       convolutions ranked by the noise injected at their activation inputs, predicted from FP32
-              statistics alone (26_quantizer_snr.py; Proposition 1 with unit propagation factors)
+              statistics alone (26_quantizer_snr.py; Proposition 3 with unit propagation factors)
 """
 import argparse
 import hashlib

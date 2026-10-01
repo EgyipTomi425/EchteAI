@@ -3,6 +3,8 @@
 > T. Menyhárt, A. Hajdu, R. Lakatos: *PEP-AI Validated Quantization for Sustainable Edge Computing in
 > Intelligent Transportation Systems*. Journal manuscript (in preparation).
 
+**Manuscript (PDF): [`paper/PEP-AI_manuscript.pdf`](paper/PEP-AI_manuscript.pdf)**
+
 The LaTeX source of the article is in [`paper/`](paper/) (Springer Nature template, single `main.tex`,
 figures in `paper/figures/`). The folder compiles as is with pdfLaTeX and BibTeX, e.g. after uploading
 it to Overleaf or with `latexmk -pdf main.tex`. The TikZ diagrams of the Methods section are rebuilt
