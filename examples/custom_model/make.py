@@ -14,7 +14,7 @@ for mod in m.modules():
         torch.nn.init.uniform_(mod.weight, 0.5, 1.5); torch.nn.init.normal_(mod.bias, 0, 0.2)
 tf = T.Compose([T.Resize(256), T.CenterCrop(224), T.ToTensor(), T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
 root = Path(__file__).resolve().parents[2] / "data" / "imagenetv2"
-files = sorted(root.rglob("*.jpeg"))[::-1][:256]             # BN statistics from real images (not the eval split order)
+files = sorted(root.rglob("*.jpeg"))[::-1][:256]             # BN statistics from real images
 m.train()
 with torch.no_grad():
     for i in range(0, len(files), 32):

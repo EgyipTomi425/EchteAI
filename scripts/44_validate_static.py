@@ -163,7 +163,6 @@ def run(model_fn, name, images, n_calib, n_eval, seed, labels, preprocess):
     s_static = static.summarise(name, layers, acts, bns, extra)
 
     results = {"model": name, "n_calib": n_calib, "n_eval": len(evalf)}
-    # FP32 reference
     sim = Simulator(base, quant_sites(base))
     logits32, heads32 = [], []
     for xb in batches(evalf, preprocess):
