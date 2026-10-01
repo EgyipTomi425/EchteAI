@@ -200,7 +200,9 @@ within 0.5 dB of that of ResNet-50).
 
 `scripts/44_validate_static.py --torchvision <name> --images <folder>` executes a model on a labelled image
 folder (ImageNet class-index sub-folders, e.g. ImageNetV2) with simulated quantization at exactly the modelled
-tensors. It is only a check of the static analysis. ImageNetV2, 128 calibration and 2 000 evaluation images:
+tensors. It is only a check of the static analysis. Besides the JSON record it prints a summary per format: the injected noise per quantizer and for
+the whole network (static and measured), the measured head-input deviation and Γ̄, each in dB and in percent of the
+signal, and with labels the relative top-1 loss. ImageNetV2, 128 calibration and 2 000 evaluation images:
 
 | Network | FP8 noise: static − measured | INT8 noise: static − measured (median, MAE) | INT8 loss measured [95 % CI] / predicted* | FP8 loss measured [95 % CI] / predicted* |
 |---|---|---|---|---|

@@ -285,6 +285,21 @@ def main():
         old = old[old.model != name]
     pd.concat([old, pd.DataFrame([res])]).to_csv(p, index=False)
     print(json.dumps({k: (round(v, 4) if isinstance(v, float) else v) for k, v in res.items()}, indent=1))
+    pct = lambda db: f"{db:5.1f} dB ({100 * 10 ** (-db / 20):5.1f} %)"
+    print(f"\n{name}: static prediction vs measurement (dB = SQNR; in brackets the deviation in percent of the signal)")
+    print(f"  {'':5s} {'per quantizer, static':>24s} {'measured':>18s} {'network, static':>20s} {'measured':>18s} "
+          f"{'head input':>18s} {'Gamma_bar':>9s}")
+    for f in ("int8", "fp8"):
+        q_meas = res[f"{f}_injected_median_db"]
+        q_stat = q_meas + res[f"{f}_static_vs_measured_median_diff_db"]
+        print(f"  {f.upper():5s} {pct(q_stat):>24s} {pct(q_meas):>18s} {pct(res[f'static_sqnr_add_{f}_db']):>20s} "
+              f"{pct(res[f'{f}_sqnr_add_measured_db']):>18s} {pct(res[f'{f}_sqnr_head_db']):>18s} "
+              f"{res[f'{f}_gamma_bar']:9.2f}")
+    print("  FP16  injected noise about 73.7 dB per quantizer (0.02 %), negligible")
+    if "int8_rel_loss" in res:
+        print(f"  relative top-1 loss: INT8 {100 * res['int8_rel_loss']:.1f} %, FP8 {100 * res['fp8_rel_loss']:.1f} % "
+              f"(predicted from the head input: {100 * res['int8_rel_loss_predicted']:.1f} %, "
+              f"{100 * res['fp8_rel_loss_predicted']:.1f} %)")
 
 
 if __name__ == "__main__":
