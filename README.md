@@ -3,10 +3,10 @@
 > T. Menyhárt, A. Hajdu, R. Lakatos: *PEP-AI Validated Quantization for Energy-Efficient Perception in
 > Intelligent Transportation Systems*. Journal manuscript (in preparation).
 
-**Manuscript (PDF): [`paper/PEP-AI_manuscript.pdf`](paper/PEP-AI_manuscript.pdf)** · **Supplementary Information (proofs,
-extended tables and figures): [`paper/PEP-AI_supplementary.pdf`](paper/PEP-AI_supplementary.pdf)** · LaTeX source:
+**Manuscript (PDF): [`paper/PEP-AI_manuscript.pdf`](paper/PEP-AI_manuscript.pdf)** · **Additional file 1 (proofs,
+supplementary results, extended tables and figures): [`paper/PEP-AI_supplementary.pdf`](paper/PEP-AI_supplementary.pdf)** · LaTeX source:
 [`paper/`](paper/) (Springer Nature template; one source, compiles as is on Overleaf or with `latexmk -pdf main.tex`;
-`paper/split_pdf.sh` splits the compiled PDF into the article and the Supplementary Information).
+`paper/split_pdf.sh` splits the compiled PDF into the article and Additional file 1).
 
 PEP-AI (*Precise, Explainable and Provable AI*) validates post-training quantized networks at the activation
 level instead of on output accuracy alone. The repository contains the article, a static analysis tool that

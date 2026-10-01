@@ -1,6 +1,6 @@
 #!/bin/sh
 # Split the compiled main.pdf into the article (with references) and the Supplementary Information
-# (Appendices A-C), at the page of the label supp:start. Needs poppler-utils (pdfseparate, pdfunite).
+# (Additional file 1, Appendices A-C), at the page of the label supp:start. Needs poppler-utils (pdfseparate, pdfunite).
 set -e
 cd "$(dirname "$0")"
 pdf=${1:-main.pdf}
