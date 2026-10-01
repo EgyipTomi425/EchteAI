@@ -20,23 +20,30 @@ Measured on an NVIDIA H200 with TensorRT 11.3 (COCO val2017 box mAP, ImageNetV2 
 
 | Network | Metric | FP32 | FP16 | INT8 | FP8 |
 |---|---|---|---|---|---|
-| Faster R-CNN R50-FPN | accuracy (%) | 37.0 | 36.9 | **36.7** (−0.25) | 36.6 (−0.37) |
+| Faster R-CNN R50-FPN | COCO mAP | 37.0 | 36.9 | **36.7** (−0.25) | 36.6 (−0.37) |
 | | latency bs1 (ms) | 6.29 | 0.91 | 0.74 | 0.91 |
 | | energy bs8 (mJ/img) | 3184 | 443 | 281 | 392 |
-| YOLOv10-S | accuracy (%) | 46.0 | 46.0 | **43.8** (−2.24) | 45.6 (−0.41) |
+| YOLOv10-S | COCO mAP | 46.0 | 46.0 | **43.8** (−2.24) | 45.6 (−0.41) |
 | | latency bs1 (ms) | 1.78 | 0.81 | 0.69 | 0.68 |
 | | energy bs8 (mJ/img) | 409 | 109 | 63.3 | 96.7 |
-| YOLOv10-X | accuracy (%) | 54.0 | 54.0 | **47.8** (−6.21) | 53.9 (−0.15) |
+| YOLOv10-X | COCO mAP | 54.0 | 54.0 | **47.8** (−6.21) | 53.9 (−0.15) |
 | | latency bs1 (ms) | 6.06 | 1.99 | 1.57 | 1.79 |
 | | energy bs8 (mJ/img) | 2477 | 582 | 295 | 430 |
-| EfficientNet-B0 | accuracy (%) | 65.8 | 65.8 | **24.8** (−40.97) | 65.4 (−0.39) |
+| EfficientNet-B0 | top-1 (%) | 65.8 | 65.8 | **24.8** (−40.97) | 65.4 (−0.39) |
 | | latency bs1 (ms) | 0.59 | 0.42 | 0.38 | 0.52 |
 | | energy bs8 (mJ/img) | 45.7 | 20.6 | 12.7 | 26.0 |
-| DenseNet-121 | accuracy (%) | 62.0 | 62.0 | **57.4** (−4.68) | 61.7 (−0.32) |
+| DenseNet-121 | top-1 (%) | 62.0 | 62.0 | **57.4** (−4.68) | 61.7 (−0.32) |
 | | latency bs1 (ms) | 2.78 | 1.59 | 1.39 | 0.71 |
 | | energy bs8 (mJ/img) | 152 | 70.5 | 40.6 | 40.9 |
 
 ![Speed-up, weight size and energy per image of FP32, FP16, INT8 and FP8 engines](docs/img/R5_speedup.png)
+
+*COCO mAP* is the official detection metric: precision averaged over 80 classes and ten box-overlap thresholds
+from IoU 0.50 to a near pixel-exact 0.95, so values of 37–54 are the published state of the art for these models
+(Faster R-CNN 37.0, YOLOv10-X 54.4); at IoU 0.5 the detectors find 82–86 % of persons and 88–93 % of large road
+users. *Top-1* is on ImageNetV2, a deliberately harder re-collected test set (65.8 % here corresponds to 77.7 % on the
+original ImageNet). What matters is the change against FP32 in brackets; strict FP32 runs without TF32, i.e. without
+tensor cores, which explains its high latency.
 
 * INT8 is 1.6–11.8× faster than strict FP32 and 1.1–1.5× faster than FP16, and uses 72–91 % less energy per image.
 * FP16 is lossless; FP8 loses at most 0.4 points; INT8 loses between 0.25 mAP and 41 top-1 points.
