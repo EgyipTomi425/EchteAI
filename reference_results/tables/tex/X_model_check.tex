@@ -1,0 +1,20 @@
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Worked example: the noise and propagation model against the measurement}\label{tab:modelcheck}
+\begin{tabular}{@{}llrrrrrr@{}}
+\toprule
+Quantity (dB) & Source & \multicolumn{3}{c}{YOLOv10-S} & \multicolumn{3}{c}{YOLOv10-X} \\
+\cmidrule{3-5}\cmidrule{6-8}
+ & & predicted & measured & difference & predicted & measured & difference \\
+\midrule
+INT8 noise of one quantizer, median SQNR & Eq.~\eqref{eq:sqnr-int8} & 29.4 & 28.0 & $+$1.4 & 27.2 & 26.7 & $+$0.6 \\
+FP8 noise of one quantizer, median SQNR & Eq.~\eqref{eq:sqnr-fp} & 31.5 & 31.5 & 0.0 & 31.5 & 31.5 & 0.0 \\
+Head-input SQNR from FP32 statistics ($\Gamma=1$) & Eq.~\eqref{eq:gammabar} & 6.0 & 11.6 & $-$5.6 & 2.6 & 4.3 & $-$1.6 \\
+Plateau of the layer SQNR (chain fit) & Eq.~\eqref{eq:fixedpoint} & 13.7 & 13.5 & $+$0.1 & 5.7 & 6.0 & $-$0.2 \\
+INT8 injected SQNR change, contrast severity 5 & Eq.~\eqref{eq:static} & $-$1.2 & $-$1.2 & 0.0 & $-$0.5 & $-$0.8 & $+$0.3 \\
+FP8 injected SQNR change, contrast severity 5 & Eq.~\eqref{eq:static} & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 \\
+INT8 layer SQNR change (cumulative), severity 5 & Eq.~\eqref{eq:static} & $-$1.2 & $-$5.7 & $+$4.5 & $-$0.5 & $-$3.4 & $+$2.9 \\
+\botrule
+\end{tabular}
+\footnotetext{Medians over the quantizers upstream of the head input (32 analysis images) or over the layers (chain fit, 500 images; contrast, 100 images). INT8 with FP32 fallback. Head input: the difference equals $10\log_{10}\bar\Gamma$. Contrast rows: prediction $20\log_{10}c$ with the measured attenuation $c$ of each quantizer input (INT8) and $0$ (FP8); the last row compares the injected change with the measured cumulative change of the layer SQNR, which also contains the shift of the operating point.}
+\end{sidewaystable}

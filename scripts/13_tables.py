@@ -2,6 +2,7 @@
 import json
 import re
 
+import numpy as np
 import pandas as pd
 
 from pepai.activations import load_activation_table
@@ -22,7 +23,7 @@ HOROWITZ = [("8-bit integer add", 0.03), ("32-bit integer add", 0.1), ("16-bit f
 
 # Tables wider than the text block go on a landscape page (Springer template: sidewaystable) in a smaller font.
 WIDE = {"tab:accuracy", "tab:layerstats", "tab:aibo", "tab:engines", "tab:localization", "tab:propagation",
-        "tab:selective", "tab:placement", "tab:operating", "tab:duplicates", "tab:calibvar", "tab:calibmethods", "tab:deployment"}
+        "tab:selective", "tab:placement", "tab:operating", "tab:duplicates", "tab:calibvar", "tab:calibmethods", "tab:deployment", "tab:modelcheck", "tab:formulas"}
 SMALL = {"tab:models", "tab:datasets"}
 
 
@@ -630,12 +631,105 @@ def table_deployment(cfg, out):
           "per image with CUDA graphs.")
 
 
+def table_formulas(cfg, out):
+    """Extended data: the noise and propagation formulas per number format (no measured data)."""
+    body = [r"Quantity & INT8 & FP8 (E4M3) & FP16 & Source \\", r"\midrule",
+            r"Scale and grid & $s=\alpha/127$, uniform, 255 levels & $s=\alpha/448$, $p=4$ significand bits & "
+            r"no scale, $p=11$ & Eq.~\eqref{eq:int8} \\",
+            r"Injected noise of one quantizer & $\mathrm{SQNR}\approx52.9\,\mathrm{dB}-20\log_{10}\kappa$ & "
+            r"$6.02p+7.44=31.5$\,dB & $6.02p+7.44=73.7$\,dB & Lemma~\ref{lem:noise} \\",
+            r"Dependence on the range $\kappa=\alpha/\sigma$ & $-20$\,dB per decade; clipping above $\alpha$ & "
+            r"none in the normal range & none & Eqs.~\eqref{eq:sqnr-int8}, \eqref{eq:sqnr-fp} \\",
+            r"Signal scaled by $c$ after calibration & $\Delta\mathrm{SQNR}=20\log_{10}c$ & $0$ for "
+            r"$c\sigma\gg2^{-6}s$ & $0$ & Corollary~\ref{cor:static} \\",
+            r"Head-input error & \multicolumn{3}{c}{$r_h^2=\sum_n\Gamma_{n\to h}\rho_n^2$; "
+            r"$\rho_n$ from the row above} & Proposition~\ref{prop:selective} \\",
+            r"Prediction from FP32 statistics & \multicolumn{3}{c}{$\mathrm{SQNR}_\text{add}=-10\log_{10}"
+            r"\sum_n\rho_n^2$ (all $\Gamma=1$)} & Eq.~\eqref{eq:gammabar} \\",
+            r"Propagation factor (one measurement) & \multicolumn{3}{c}{$\bar\Gamma=10^{(\mathrm{SQNR}_\text{add}-"
+            r"\mathrm{SQNR}_h)/10}$; $<1$ attenuating, $>1$ amplifying} & Eq.~\eqref{eq:gammabar} \\",
+            r"Plateau of a contracting chain & \multicolumn{3}{c}{$\mathrm{SQNR}_\infty=-20\log_{10}\rho+"
+            r"10\log_{10}(1-g^2)$ for $g<1$} & Proposition~\ref{prop:fixedpoint} \\",
+            r"Layers to keep in FP16 & \multicolumn{3}{c}{the $k$ largest contributions $\Gamma_{n\to h}\rho_n^2$} & "
+            r"Proposition~\ref{prop:selective} \\"]
+    write(out / "X_formulas.tex", body, "lllll", "Noise and propagation formulas per number format", "tab:formulas",
+          "$\\alpha$: clipping range, $\\sigma$: root-mean-square value of the activation, $\\kappa=\\alpha/\\sigma$, "
+          "$p$: significand bits including the implicit one, $\\rho_n$: relative noise injected at node $n$, "
+          "$\\mathrm{SQNR}_h$: measured head-input SQNR, $g$: propagation gain of a chain. Valid under the "
+          "assumptions (A1), (A2) and the linearisation of Section~\\ref{sec:propagation}.")
+
+
+def table_model_check(cfg, out, models=("yolov10s", "yolov10x"), severity=5):
+    """Extended data: every step of the noise and propagation model computed for two detectors and compared with
+    the measurement (all inputs are tables written by 06, 26 and 12_figures)."""
+    t = results_dir(cfg, "tables")
+    need = ["quantizer_snr.csv", "quantizer_snr_fp8.csv", "quantizer_snr_summary.csv", "propagation_factor.csv",
+            "recursion_fit.csv", "static_scale.csv", f"quantizer_snr_contrast{severity}.csv",
+            f"quantizer_snr_fp8_contrast{severity}.csv"]
+    if not all((t / n).exists() for n in need):
+        return
+    q, q8 = pd.read_csv(t / "quantizer_snr.csv"), pd.read_csv(t / "quantizer_snr_fp8.csv")
+    summ = pd.read_csv(t / "quantizer_snr_summary.csv").set_index("model")
+    pf = pd.read_csv(t / "propagation_factor.csv").set_index("model")
+    rec = pd.read_csv(t / "recursion_fit.csv").set_index(["model", "precision"])
+    st = pd.read_csv(t / "static_scale.csv")
+    qc, q8c = pd.read_csv(t / f"quantizer_snr_contrast{severity}.csv"), pd.read_csv(t / f"quantizer_snr_fp8_contrast{severity}.csv")
+
+    def contrast_change(base, cond, m, int8):
+        j = base[base.model == m].set_index("tensor").join(cond[cond.model == m].set_index("tensor"), rsuffix="_c",
+                                                           how="inner")
+        j = j[j.upstream_of_head.astype(bool)]
+        pred = 20 * np.log10(j.rms_c / j.rms) if int8 else 0 * j.rms
+        return float(np.median(pred)), float(np.median(j.sqnr_inj_db_c - j.sqnr_inj_db))
+
+    rows, data = [], {}
+    for m in models:
+        up, up8 = q[(q.model == m) & q.upstream_of_head.astype(bool)], q8[(q8.model == m) & q8.upstream_of_head.astype(bool)]
+        meas_layer = st[(st.model == m) & (st.precision == "int8fp32") & (st.severity == severity)].measured_median_db.dropna()
+        data[m] = [
+            (up.sqnr_pred_db.median(), up.sqnr_inj_db.median()),
+            (up8.sqnr_pred_db.median(), up8.sqnr_inj_db.median()),
+            (pf.loc[m, "sqnr_add_db"], pf.loc[m, "sqnr_head_db"]),
+            (rec.loc[(m, "int8fp32"), "plateau_db"], rec.loc[(m, "int8fp32"), "measured_db"]),
+            contrast_change(q, qc, m, True),
+            contrast_change(q8, q8c, m, False),
+            (contrast_change(q, qc, m, True)[0], float(meas_layer.iloc[0]) if len(meas_layer) else float("nan")),
+        ]
+    labels = [("INT8 noise of one quantizer, median SQNR", r"Eq.~\eqref{eq:sqnr-int8}"),
+              ("FP8 noise of one quantizer, median SQNR", r"Eq.~\eqref{eq:sqnr-fp}"),
+              (r"Head-input SQNR from FP32 statistics ($\Gamma=1$)", r"Eq.~\eqref{eq:gammabar}"),
+              ("Plateau of the layer SQNR (chain fit)", r"Eq.~\eqref{eq:fixedpoint}"),
+              (f"INT8 injected SQNR change, contrast severity {severity}", r"Eq.~\eqref{eq:static}"),
+              (f"FP8 injected SQNR change, contrast severity {severity}", r"Eq.~\eqref{eq:static}"),
+              (f"INT8 layer SQNR change (cumulative), severity {severity}", r"Eq.~\eqref{eq:static}")]
+    head = " & ".join(rf"\multicolumn{{3}}{{c}}{{{MODEL_LABELS[m]}}}" for m in models)
+    body = [rf"Quantity (dB) & Source & {head} \\",
+            "".join(rf"\cmidrule{{{3 + 3 * i}-{5 + 3 * i}}}" for i in range(len(models))),
+            " & & " + " & ".join(["predicted & measured & difference"] * len(models)) + r" \\", r"\midrule"]
+    for i, (lab, src) in enumerate(labels):
+        cells = []
+        for m in models:
+            pr, me = data[m][i]
+            show = signed if "change" in lab else fmt
+            cells += [show(pr, 1), show(me, 1), signed(pr - me, 1)]
+            rows.append({"model": m, "quantity": lab, "predicted_db": pr, "measured_db": me, "difference_db": pr - me})
+        body.append(f"{lab} & {src} & " + " & ".join(cells) + r" \\")
+    pd.DataFrame(rows).to_csv(t / "model_check.csv", index=False)
+    write(out / "X_model_check.tex", body, "ll" + "rrr" * len(models),
+          "Worked example: the noise and propagation model against the measurement", "tab:modelcheck",
+          "Medians over the quantizers upstream of the head input (32 analysis images) or over the layers (chain fit, "
+          "500 images; contrast, 100 images). INT8 with FP32 fallback. Head input: the difference equals "
+          "$10\\log_{10}\\bar\\Gamma$. Contrast rows: prediction $20\\log_{10}c$ with the measured attenuation $c$ "
+          "of each quantizer input (INT8) and $0$ (FP8); the last row compares the injected change with the measured "
+          "cumulative change of the layer SQNR, which also contains the shift of the operating point.")
+
+
 if __name__ == "__main__":
     cfg = load_config()
     out = results_dir(cfg, "tables", "tex")
     for f in (table_models, table_datasets, table_energy_reference, table_placement, table_accuracy_speed, table_layer_stats, table_aibo,
               table_hardware, table_engines, table_localization, table_propagation, table_selective,
               table_calibration_variability, table_operating_point, table_duplicates,
-              table_calibration_methods, table_deployment):
+              table_calibration_methods, table_deployment, table_formulas, table_model_check):
         f(cfg, out)
         print("done:", f.__name__, flush=True)

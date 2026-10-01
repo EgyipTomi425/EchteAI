@@ -555,6 +555,11 @@ DenseNet-121 & FP32 & 59 & 11 & 14 & -- & -- & -- & -- \\
 \end{sidewaystable}
 % END GENERATED R3_aibo
 
+\subsection{Applying the model to a network: a worked example}\label{sec:worked}
+The noise and propagation model can be applied to a new network in four steps; Table~\ref{tab:formulas} lists the formulas for INT8, FP8 and FP16, and Table~\ref{tab:modelcheck} carries out every step for YOLOv10-S and YOLOv10-X and compares it with the measurement. First, the calibrated scales and the FP32 activations give the normalised range $\kappa$ of every quantizer and, by Lemma~\ref{lem:noise}, its injected noise without running a quantized model: for the 79 quantizers upstream of the YOLOv10-S head (median $\kappa=15.3$), Eq.~\eqref{eq:sqnr-int8} predicts a median of 29.4\,dB against an exact 28.0\,dB, and 27.2 against 26.7\,dB for the 187 quantizers of YOLOv10-X; for FP8, Eq.~\eqref{eq:sqnr-fp} predicts 31.5\,dB for every quantizer, which the exact values match within 0.1\,dB. Second, summing these contributions with unit propagation factors predicts the head-input fidelity from FP32 statistics alone, 6.0 and 2.6\,dB. Third, one measurement of the head input of the quantized engine, 11.6 and 4.3\,dB, gives $\bar\Gamma=0.28$ and 0.69 by Eq.~\eqref{eq:gammabar}: both networks attenuate the injected noise, and the difference between the prediction with $\Gamma=1$ and the measurement, 5.6 and 1.6\,dB, is exactly what $\bar\Gamma$ absorbs. A network with $\bar\Gamma\ll1$ and a high head-input SQNR, such as Faster R-CNN (0.13, 21.5\,dB, $-0.25$\,mAP), can be deployed in INT8; a network with $\bar\Gamma$ near or above one, such as EfficientNet-B0 (2.89), calls for FP8, FP16 or selective precision, whose layers are chosen by Proposition~\ref{prop:selective}. Fourth, Corollary~\ref{cor:static} predicts the effect of a signal change after deployment from the measured attenuation $c$ at each quantizer input: at contrast severity~5 it predicts a median change of the injected SQNR of $-1.2$ and $-0.5$\,dB against measured $-1.2$ and $-0.8$\,dB, and no change for FP8, as measured.
+
+The model is accurate where it is applied to single quantizers and to the plateau of a chain: the median per-quantizer prediction lies within 1.4\,dB for INT8 and 0.1\,dB for FP8, and the fixed point of Eq.~\eqref{eq:fixedpoint} within 0.3\,dB of the measured plateau (13.7 against 13.5\,dB and 5.7 against 6.0\,dB), although the chain fit itself is weak for the branched YOLOv10 detectors. It deviates in two places. The prediction with unit propagation factors misses the head-input SQNR by 1.6--5.6\,dB, which is why one measurement of the quantized network is required, and the static-scale prediction of the injected change underestimates the cumulative change of the layer SQNR under strong contrast loss by 2.9--4.5\,dB, because the shifted input also moves the operating point of the network and with it the propagation factors. Corollary~\ref{cor:static} therefore predicts the direction of the effect and the difference between INT8 and FP8, not its full size, and a propagation factor estimated on the INT8 placement predicts the FP8 head-input SQNR only within 3.4--5.5\,dB (Supplementary Section~\ref{sec:supp-res-act}).
+
 \section{Discussion}\label{sec:discussion}
 
 The results relate to the literature as follows. The collapse of EfficientNet-B0 under per-tensor INT8 matches the known fragility of depthwise-separable networks~\cite{sheng2018quantization,nagel2019datafree}; Lemma~\ref{lem:noise} and $\bar\Gamma$ add a quantitative reason, namely that EfficientNet-B0 amplifies the injected noise instead of attenuating it. The accuracy advantage of FP8 confirms the analysis of Kuzmin et al.~\cite{kuzmin2022fp8}, and the speed advantage of INT8 for four of the five networks the hardware argument of van Baalen et al.~\cite{vanbaalen2023fp8}: which format is preferable depends on the architecture and the compiler. The dependence of INT8 accuracy on the range setting agrees with the finding that no calibration method is best for all networks~\cite{wu2020integer} and with the role of the calibration set~\cite{hubara2021accurate}, and adds the order of the calibration images as a hidden factor. The PEP-AI ranking is a gradient-free counterpart of Hessian-based mixed precision~\cite{dong2019hawq,yao2021hawqv3}. The corruption sensitivity reported for quantized classifiers~\cite{xiao2023robustness} appears for the detectors only under contrast loss, which Corollary~\ref{cor:static} explains, and NMS-free detectors~\cite{wang2024yolov10,zhao2024rtdetr} make duplicate suppression a learned function of small score differences, which INT8 can break.
@@ -909,6 +914,52 @@ DenseNet-121 & 187 & 30.5 [28.5, 33.3] & 2.6 & 6.1 & 6.6 & 0.90 \\
 \footnotetext{Quantizers upstream of the head-input tensors. Injected SQNR: exact SQNR of each quantizer applied with its calibrated scale to the FP32 activations of 32 analysis images (median and interquartile range). Model error: mean absolute difference between Eq.~\eqref{eq:sqnr-int8} and the injected SQNR for quantizers without clipping. SQNR$_\text{add}$ and $\bar\Gamma$: Eq.~\eqref{eq:gammabar}; SQNR$_h$: measured head-input SQNR (500 images, Table~\ref{tab:layerstats}).}
 \end{sidewaystable}
 % END GENERATED X_propagation
+
+% BEGIN GENERATED X_formulas
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Noise and propagation formulas per number format}\label{tab:formulas}
+\begin{tabular}{@{}lllll@{}}
+\toprule
+Quantity & INT8 & FP8 (E4M3) & FP16 & Source \\
+\midrule
+Scale and grid & $s=\alpha/127$, uniform, 255 levels & $s=\alpha/448$, $p=4$ significand bits & no scale, $p=11$ & Eq.~\eqref{eq:int8} \\
+Injected noise of one quantizer & $\mathrm{SQNR}\approx52.9\,\mathrm{dB}-20\log_{10}\kappa$ & $6.02p+7.44=31.5$\,dB & $6.02p+7.44=73.7$\,dB & Lemma~\ref{lem:noise} \\
+Dependence on the range $\kappa=\alpha/\sigma$ & $-20$\,dB per decade; clipping above $\alpha$ & none in the normal range & none & Eqs.~\eqref{eq:sqnr-int8}, \eqref{eq:sqnr-fp} \\
+Signal scaled by $c$ after calibration & $\Delta\mathrm{SQNR}=20\log_{10}c$ & $0$ for $c\sigma\gg2^{-6}s$ & $0$ & Corollary~\ref{cor:static} \\
+Head-input error & \multicolumn{3}{c}{$r_h^2=\sum_n\Gamma_{n\to h}\rho_n^2$; $\rho_n$ from the row above} & Proposition~\ref{prop:selective} \\
+Prediction from FP32 statistics & \multicolumn{3}{c}{$\mathrm{SQNR}_\text{add}=-10\log_{10}\sum_n\rho_n^2$ (all $\Gamma=1$)} & Eq.~\eqref{eq:gammabar} \\
+Propagation factor (one measurement) & \multicolumn{3}{c}{$\bar\Gamma=10^{(\mathrm{SQNR}_\text{add}-\mathrm{SQNR}_h)/10}$; $<1$ attenuating, $>1$ amplifying} & Eq.~\eqref{eq:gammabar} \\
+Plateau of a contracting chain & \multicolumn{3}{c}{$\mathrm{SQNR}_\infty=-20\log_{10}\rho+10\log_{10}(1-g^2)$ for $g<1$} & Proposition~\ref{prop:fixedpoint} \\
+Layers to keep in FP16 & \multicolumn{3}{c}{the $k$ largest contributions $\Gamma_{n\to h}\rho_n^2$} & Proposition~\ref{prop:selective} \\
+\botrule
+\end{tabular}
+\footnotetext{$\alpha$: clipping range, $\sigma$: root-mean-square value of the activation, $\kappa=\alpha/\sigma$, $p$: significand bits including the implicit one, $\rho_n$: relative noise injected at node $n$, $\mathrm{SQNR}_h$: measured head-input SQNR, $g$: propagation gain of a chain. Valid under the assumptions (A1), (A2) and the linearisation of Section~\ref{sec:propagation}.}
+\end{sidewaystable}
+% END GENERATED X_formulas
+
+% BEGIN GENERATED X_model_check
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Worked example: the noise and propagation model against the measurement}\label{tab:modelcheck}
+\begin{tabular}{@{}llrrrrrr@{}}
+\toprule
+Quantity (dB) & Source & \multicolumn{3}{c}{YOLOv10-S} & \multicolumn{3}{c}{YOLOv10-X} \\
+\cmidrule{3-5}\cmidrule{6-8}
+ & & predicted & measured & difference & predicted & measured & difference \\
+\midrule
+INT8 noise of one quantizer, median SQNR & Eq.~\eqref{eq:sqnr-int8} & 29.4 & 28.0 & $+$1.4 & 27.2 & 26.7 & $+$0.6 \\
+FP8 noise of one quantizer, median SQNR & Eq.~\eqref{eq:sqnr-fp} & 31.5 & 31.5 & 0.0 & 31.5 & 31.5 & 0.0 \\
+Head-input SQNR from FP32 statistics ($\Gamma=1$) & Eq.~\eqref{eq:gammabar} & 6.0 & 11.6 & $-$5.6 & 2.6 & 4.3 & $-$1.6 \\
+Plateau of the layer SQNR (chain fit) & Eq.~\eqref{eq:fixedpoint} & 13.7 & 13.5 & $+$0.1 & 5.7 & 6.0 & $-$0.2 \\
+INT8 injected SQNR change, contrast severity 5 & Eq.~\eqref{eq:static} & $-$1.2 & $-$1.2 & 0.0 & $-$0.5 & $-$0.8 & $+$0.3 \\
+FP8 injected SQNR change, contrast severity 5 & Eq.~\eqref{eq:static} & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 \\
+INT8 layer SQNR change (cumulative), severity 5 & Eq.~\eqref{eq:static} & $-$1.2 & $-$5.7 & $+$4.5 & $-$0.5 & $-$3.4 & $+$2.9 \\
+\botrule
+\end{tabular}
+\footnotetext{Medians over the quantizers upstream of the head input (32 analysis images) or over the layers (chain fit, 500 images; contrast, 100 images). INT8 with FP32 fallback. Head input: the difference equals $10\log_{10}\bar\Gamma$. Contrast rows: prediction $20\log_{10}c$ with the measured attenuation $c$ of each quantizer input (INT8) and $0$ (FP8); the last row compares the injected change with the measured cumulative change of the layer SQNR, which also contains the shift of the operating point.}
+\end{sidewaystable}
+% END GENERATED X_model_check
 
 % BEGIN GENERATED X_selective
 \begin{sidewaystable}
