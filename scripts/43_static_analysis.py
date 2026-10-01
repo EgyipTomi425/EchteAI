@@ -327,9 +327,11 @@ def scenarios(s, layers, acts):
 
 def report_scenarios(s, layers, acts):
     rows, refs = scenarios(s, layers, acts)
-    print("  scenarios    static SQNR_add with weights (higher = less noise at the head input):")
+    print("  scenarios    static SQNR_add with weights (higher = less noise at the head input) and the relative error")
+    print("               r = 10^(-SQNR/20) it corresponds to, with unit propagation factors (an estimate of the noise,")
+    print("               not of the accuracy loss):")
     for label, v in rows:
-        print(f"                 {label:28s} {v:6.1f} dB")
+        print(f"                 {label:28s} {v:6.1f} dB   r ~ {100 * 10 ** (-v / 20):5.1f} % of the signal")
     if refs:
         v = s["static_sqnr_add_int8_db"]
         print(f"  references   static INT8 SQNR_add of this network: {v:.1f} dB. Measured networks of the article "
@@ -344,8 +346,8 @@ def report_scenarios(s, layers, acts):
             print(f"                 --> {s['model']:24s} {v:5.1f} dB")
         print("               The static analysis ranks networks (Spearman 0.9 on the five) but does not see how a "
               "network propagates the noise;")
-        print("               it gives no accuracy number. For the relative loss: one measurement of the quantized "
-              "head input")
+        print("               it gives no accuracy number (no % loss for INT8 or FP8). For the relative loss: one measurement "
+              "of the quantized head input")
         print("               (42_predict_int8.py, within about x2) or a direct check (44_validate_static.py).")
     return rows, refs
 

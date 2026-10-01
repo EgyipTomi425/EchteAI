@@ -96,11 +96,14 @@ Example output (ResNet-50, a network not used elsewhere in the article):
   weakest      layer1.1.bn3 (identity): INT8 30.8 dB, spread 11x, kappa 12.1
   weakest      layer2.1.bn3 (identity): INT8 32.4 dB, spread 6x, kappa 9.5
   flags        strong channel imbalance (up to 21x) under one per-tensor scale
-  scenarios    static SQNR_add with weights (higher = less noise at the head input):
-                 INT8, per-channel weights      15.8 dB
-                 INT8, per-tensor weights        7.4 dB
-                 FP8 E4M3                       11.5 dB
-                 FP16                           53.4 dB
+  coverage     activations taken from the traced graph
+  scenarios    static SQNR_add with weights (higher = less noise at the head input) and the relative error
+               r = 10^(-SQNR/20) it corresponds to, with unit propagation factors (an estimate of the noise,
+               not of the accuracy loss):
+                 INT8, per-channel weights      15.8 dB   r ~  16.2 % of the signal
+                 INT8, per-tensor weights        7.4 dB   r ~  42.5 % of the signal
+                 FP8 E4M3                       11.5 dB   r ~  26.7 % of the signal
+                 FP16                           53.4 dB   r ~   0.2 % of the signal
   references   static INT8 SQNR_add of this network: 19.0 dB. Measured networks of the article (static SQNR_add, measured relative INT8 loss with TensorRT):
                      frcnn_r50_fpn             20.6 dB     0.7%
                  --> resnet50                  19.0 dB
@@ -109,7 +112,7 @@ Example output (ResNet-50, a network not used elsewhere in the article):
                      efficientnet_b0           16.2 dB    62.3%
                      yolov10x                  14.9 dB    11.5%
                The static analysis ranks networks (Spearman 0.9 on the five) but does not see how a network propagates the noise;
-               it gives no accuracy number. For the relative loss: one measurement of the quantized head input
+               it gives no accuracy number (no % loss for INT8 or FP8). For the relative loss: one measurement of the quantized head input
                (42_predict_int8.py, within about x2) or a direct check (44_validate_static.py).
 ```
 
