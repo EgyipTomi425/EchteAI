@@ -58,7 +58,12 @@ about 20 dB for Faster R-CNN, close to 0 dB in parts of EfficientNet-B0):
 
 ![Layer-wise SQNR and relative error of INT8, FP8 and FP16 for the five networks](docs/img/R4_propagation.png)
 
-**How to read dB.** SQNR = 10 log₁₀(signal power / noise power); the relative error is r = 10^(−SQNR/20):
+**How to read dB.** The same image is run through the FP32 and the quantized model, and a layer output is compared:
+f is the FP32 tensor, q the quantized one and e = q − f the error. Power means the sum of squares, so
+
+    SQNR = 10 log₁₀( Σ f² / Σ e² ) dB  =  20 log₁₀( ‖f‖ / ‖e‖ ) dB
+
+computed per image and reported as the median over images. The relative error is r = ‖e‖ / ‖f‖ = 10^(−SQNR/20):
 
 | SQNR | 40 dB | 30 dB | 20 dB | 10 dB | 0 dB |
 |---|---|---|---|---|---|
