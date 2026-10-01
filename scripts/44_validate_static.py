@@ -243,34 +243,47 @@ def run(model_fn, name, images, n_calib, n_eval, seed, labels, preprocess):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--torchvision", required=True, help="torchvision classification model (default weights)")
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--torchvision", help="torchvision classification model (default weights)")
+    g.add_argument("--module", help="a whole PyTorch model saved with torch.save(model, path); 224x224 RGB input "
+                                    "with ImageNet normalisation; its last nn.Linear is taken as the head")
     ap.add_argument("--images", help="folder with one sub-folder per ImageNet class index; without it only the "
                                      "static analysis is run")
     ap.add_argument("--n-calib", type=int, default=128)
     ap.add_argument("--n-eval", type=int, default=1000)
     ap.add_argument("--no-labels", action="store_true")
     args = ap.parse_args()
+    import copy
     import torchvision
     cfg = load_config()
-    weights = torchvision.models.get_model_weights(args.torchvision).DEFAULT
-    preprocess = weights.transforms()
-    fn = lambda: torchvision.models.get_model(args.torchvision, weights=weights)
+    if args.module:
+        name = Path(args.module).stem
+        loaded = torch.load(args.module, map_location="cpu", weights_only=False).float().eval()
+        from torchvision import transforms as T
+        preprocess = T.Compose([T.Resize(256), T.CenterCrop(224), T.ToTensor(),
+                                T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+        fn = lambda: copy.deepcopy(loaded)
+    else:
+        name = args.torchvision
+        weights = torchvision.models.get_model_weights(args.torchvision).DEFAULT
+        preprocess = weights.transforms()
+        fn = lambda: torchvision.models.get_model(args.torchvision, weights=weights)
     if not args.images:
         torch.set_grad_enabled(False)
         layers, acts, bns, extra = static.analyse(fn().eval(), np.random.default_rng(cfg["seed"]))
-        summary = static.summarise(args.torchvision, layers, acts, bns, extra)
+        summary = static.summarise(name, layers, acts, bns, extra)
         static.report(summary, layers, acts, bns)
         static.report_scenarios(summary, layers, acts)
         print("\nno --images: static analysis only (nothing executed); pass an image folder to measure the error")
         return
-    res, ps = run(fn, args.torchvision, args.images, args.n_calib, args.n_eval, cfg["seed"], not args.no_labels,
+    res, ps = run(fn, name, args.images, args.n_calib, args.n_eval, cfg["seed"], not args.no_labels,
                   preprocess)
     out = results_dir(cfg, "tables", "static")
-    ps.to_csv(out / f"{args.torchvision}_validation_sites.csv", index=False)
+    ps.to_csv(out / f"{name}_validation_sites.csv", index=False)
     p = results_dir(cfg, "tables") / "static_validation.csv"
     old = pd.read_csv(p) if p.exists() else pd.DataFrame()
     if len(old):
-        old = old[old.model != args.torchvision]
+        old = old[old.model != name]
     pd.concat([old, pd.DataFrame([res])]).to_csv(p, index=False)
     print(json.dumps({k: (round(v, 4) if isinstance(v, float) else v) for k, v in res.items()}, indent=1))
 

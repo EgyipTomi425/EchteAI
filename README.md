@@ -173,6 +173,31 @@ tensors. It is only a check of the static analysis. ImageNetV2, 128 calibration 
 
 \* predicted from one measurement of the quantized head input (next section), not from the static analysis.
 
+**A network of your own.** The analysis does not depend on torchvision. `examples/custom_model/` defines a
+custom 1.2 M-parameter network with a SiLU stem, depthwise blocks with squeeze-and-excitation and Hardswish, ReLU
+residual bottlenecks, one convolution without BN and a GroupNorm layer. Its BN statistics come from 256 real
+images; the weights are untrained, so there is no accuracy to compare. To run the analysis and the check:
+
+```bash
+cd examples/custom_model && python make.py && cd ../..          # writes examples/custom_model/my_net.pt
+PYTHONPATH=examples/custom_model python scripts/43_static_analysis.py --module examples/custom_model/my_net.pt
+PYTHONPATH=examples/custom_model python scripts/44_validate_static.py --module examples/custom_model/my_net.pt \
+    --images data/imagenetv2/imagenetv2-matched-frequency-format-val --no-labels --n-eval 500
+```
+
+Results:
+
+* **FP8:** the injected noise is predicted within 0.01 dB (median; mean absolute error 0.05 dB), and the static
+  SQNR_add matches the measured one (16.60 vs 16.58 dB).
+* **INT8:** the prediction is again too optimistic for SiLU/ReLU activations, by 6.5 dB (median), as for the
+  pretrained networks above.
+* **Coverage:** the report lists what the BN-based model cannot see, here the convolutions without BN (including
+  the squeeze-and-excitation layers) and the GroupNorm layer.
+* **Activations:** the activation after each BN is read from the traced graph (`torch.fx`, nothing executed).
+  For networks that cannot be traced, the module order is used.
+* **Head input:** the measured head-input SQNR (28.9 dB, Γ̄ = 0.11) lies outside the range of the calibration
+  networks (−1 to 22 dB), so a loss predicted from it would be an extrapolation.
+
 | Question | Answer of the static analysis | Reliability |
 |---|---|---|
 | Per-channel or per-tensor weight scales? | network SQNR for both | exact (no model involved) |

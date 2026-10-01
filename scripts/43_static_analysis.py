@@ -136,8 +136,50 @@ def leaf_modules(model):
     return [(n, m) for n, m in model.named_modules() if len(list(m.children())) == 0]
 
 
+FUNCTIONAL_ACTS = {"relu": "relu", "relu_": "relu", "relu6": "relu6", "silu": "silu", "hardswish": "hardswish",
+                   "gelu": "gelu", "sigmoid": "sigmoid", "leaky_relu": "leaky_relu"}
+_GRAPH_CACHE = {}
+
+
+def graph_activations(model):
+    """BN name -> activation applied to its output, read from the symbolic graph (torch.fx; nothing is executed).
+    A BN whose output feeds an addition or several consumers is 'identity'. None if the model cannot be traced."""
+    if id(model) in _GRAPH_CACHE:
+        return _GRAPH_CACHE[id(model)]
+    out = None
+    try:
+        import operator
+        import torch.fx
+        gm = torch.fx.symbolic_trace(model)
+        mods = dict(gm.named_modules())
+        out = {}
+        for node in gm.graph.nodes:
+            if node.op != "call_module" or not is_bn(mods.get(node.target)):
+                continue
+            users = list(node.users)
+            act = "identity"
+            if len(users) == 1:
+                u = users[0]
+                if u.op == "call_module":
+                    for cls, a in ACTIVATIONS.items():
+                        if isinstance(mods.get(u.target), cls):
+                            act = a
+                elif u.op in ("call_function", "call_method"):
+                    fname = getattr(u.target, "__name__", str(u.target))
+                    act = FUNCTIONAL_ACTS.get(fname, "identity")
+            out[node.target] = act
+    except Exception:                    # dynamic control flow etc.: fall back to the module order
+        out = None
+    _GRAPH_CACHE[id(model)] = out
+    return out
+
+
 def following_activation(leaves, i, name, model):
-    """Activation applied to the output of the BN at leaves[i] (next leaf, or the parent's shared ReLU)."""
+    """Activation applied to the output of the BN at leaves[i]: from the symbolic graph if the model can be traced,
+    otherwise the next leaf module (or the parent's shared ReLU in torchvision ResNet blocks)."""
+    g = graph_activations(model)
+    if g is not None and name in g:
+        return g[name]
     parent = model.get_submodule(name.rsplit(".", 1)[0]) if "." in name else model
     kind = type(parent).__name__
     if kind in ("Bottleneck", "BasicBlock") or name.endswith("downsample.1"):
@@ -186,10 +228,17 @@ def analyse(model, rng):
                 acts.append({"tensor": name, "activation": act, **q})
             if not fold:
                 bns.append({"bn": name, "gain_a3": bn_gain(m)})
+    # tensors the BN-based model cannot see: conv/linear outputs not followed by a BN (except the final layer)
+    # and other normalisations; their noise is missing from SQNR_add, which is then optimistic
+    unmodelled = [n for j, (n, m) in enumerate(leaves[:-1]) if isinstance(m, (nn.Conv2d, nn.Linear))
+                  and not is_bn(leaves[j + 1][1])]
+    other_norms = [n for n, m in leaves if isinstance(m, (nn.GroupNorm, nn.LayerNorm, nn.InstanceNorm2d))]
     n_sigmoid = sum(isinstance(m, (nn.Sigmoid, nn.SiLU, nn.Hardsigmoid)) for _, m in leaves)
     n_attn = sum(type(m).__name__ in ("Attention", "MultiheadAttention", "PSA") for m in model.modules())
-    return pd.DataFrame(layers), pd.DataFrame(acts), pd.DataFrame(bns), {"sigmoid_gates": n_sigmoid,
-                                                                          "attention_blocks": n_attn}
+    return pd.DataFrame(layers), pd.DataFrame(acts), pd.DataFrame(bns), {
+        "sigmoid_gates": n_sigmoid, "attention_blocks": n_attn, "unmodelled_outputs": len(unmodelled),
+        "unmodelled_examples": ", ".join(unmodelled[:3]), "other_norm_layers": len(other_norms),
+        "other_norm_examples": ", ".join(other_norms[:3]), "graph_traced": graph_activations(model) is not None}
 
 
 def summarise(name, layers, acts, bns, extra):
@@ -243,6 +292,16 @@ def report(s, layers, acts, bns):
     if s["attention_blocks"]:
         flags.append("attention block (wide activation range, clipping under distribution shift)")
     print("  flags        " + ("; ".join(flags) if flags else "none"))
+    cover = [f"activations taken from the {'traced graph' if s.get('graph_traced') else 'module order (graph not traceable)'}"]
+    if s.get("unmodelled_outputs"):
+        cover.append(f"{s['unmodelled_outputs']} conv/linear outputs without BN are not modelled "
+                     f"(e.g. {s['unmodelled_examples']})")
+    if s.get("other_norm_layers"):
+        cover.append(f"{s['other_norm_layers']} GroupNorm/LayerNorm layers are not modelled "
+                     f"(e.g. {s['other_norm_examples']})")
+    if len(cover) > 1:
+        cover.append("their noise is missing, so SQNR_add is optimistic")
+    print("  coverage     " + "; ".join(cover))
 
 
 def scenarios(s, layers, acts):
