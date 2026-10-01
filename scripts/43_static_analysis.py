@@ -351,6 +351,15 @@ def report_scenarios(s, layers, acts):
             print(f"                     {m:24s} {x:5.1f} dB   {loss:5.1f}%")
         if not placed:
             print(f"                 --> {s['model']:24s} {v:5.1f} dB")
+        above = [r for r in refs if r[1] > v]
+        below = [r for r in refs if r[1] <= v]
+        if above and below:
+            lo, hi = sorted([above[-1][2], below[0][2]])
+            print(f"               INT8 bracket from the two neighbours in this ranking: about {lo:.1f}-{hi:.1f} % relative loss,")
+            print("               if the network propagates the noise like they do (not a fit; the ranking has one exchange,")
+            print("               and a fitted curve would miss by up to x10 because the propagation factor is not visible).")
+        else:
+            print("               Outside the range of the measured networks: no INT8 bracket.")
         v8 = dict(rows)["FP8 E4M3"]
         print(f"               FP8 (static SQNR_add with weights {v8:.1f} dB; measured relative FP8 loss with TensorRT):")
         placed = False
@@ -366,7 +375,7 @@ def report_scenarios(s, layers, acts):
         print("               the noise can still lose more (MobileNetV2: 10 % in the simulated FP8 check, Gamma_bar 3.3).")
         print("               The static analysis ranks networks (Spearman 0.9 on the five) but does not see how a "
               "network propagates the noise;")
-        print("               it gives no accuracy number (no % loss for INT8 or FP8). For the relative loss: one measurement "
+        print("               it gives no fitted accuracy number, only the INT8 bracket above. For the relative loss: one measurement "
               "of the quantized head input")
         print("               (42_predict_int8.py, within about x2) or a direct check (44_validate_static.py).")
     return rows, refs
