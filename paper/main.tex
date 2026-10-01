@@ -1161,23 +1161,30 @@ DenseNet-121 & INT8 & 1.2 & 2.5 & 19.7 & 34.5 & 19.6 & 2.5 \\
 
 \begin{table}[h]
 \footnotesize\setlength{\tabcolsep}{3pt}
-\caption{Network properties and their effect on the quantization noise}\label{tab:factors}
-\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}p{3.5cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{3.6cm}@{}}
+\caption{How network structure and quantization choices affect the quantization error}\label{tab:factors}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}p{3.1cm}>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}p{3.4cm}>{\raggedright\arraybackslash}p{1.4cm}@{}}
 \toprule
-Property & Effect on the head-input SQNR & Formula & Example in this article \\
+Property & Effect & Formula & Evidence in this article & Status \\
 \midrule
-Depth: number $N$ of quantized tensors on the path to the head & $-3$\,dB per doubling & $\mathrm{SQNR}_\text{add}=-10\log_{10}N-10\log_{10}\langle\rho_n^2\rangle$ & 62 (Faster R-CNN) against 187 (YOLOv10-X) quantizers: 4.8\,dB \\
-Weakest tensors (outlier channels, depthwise inputs, gates, attention) & dominate the mean noise; $-20$\,dB per decade of $\kappa$ & Lemma~\ref{lem:noise}, Eq.~\eqref{eq:sqnr-int8} & EfficientNet-B0: median 32.5\,dB, mean 24.2\,dB \\
-Width and channel imbalance & one per-tensor scale quantizes narrow channels coarsely & $10\log_{10}(12\,\sigma_c^2/s^2)$ per channel & MobileNetV2 \texttt{features.6.conv.3}: 20.9\,dB for the narrowest against 42.5\,dB for the widest channel \\
-Activation function & ReLU uses half of the symmetric grid; SiLU and concatenated ReLU outputs have heavier tails than the Gaussian model & -- & static INT8 prediction too high by 0.4 (MobileNetV2), 4.0 (EfficientNet-B0) and 6.2\,dB (DenseNet-121) \\
-Operators between quantizer and head & sigmoid gates, max pooling after unquantized layers and residual trunks attenuate; non-folded BN amplifies & $a_n$ (Eq.~\eqref{eq:amplification}), Eq.~\eqref{eq:bn} & $\bar\Gamma=0.13$ (Faster R-CNN) to 2.89 (EfficientNet-B0); BN gain median 1.24 \\
-Weights & negligible with per-channel INT8 scales; comparable to the activations per tensor or in FP8 & Lemma~\ref{lem:noise} on $w$ & 37--43\,dB per channel, 26--34\,dB per tensor, 32\,dB in FP8 (seven networks) \\
-Number format & INT8 noise depends on the range and the tails, FP8 and FP16 noise does not & Eqs.~\eqref{eq:sqnr-int8}, \eqref{eq:sqnr-fp} & static FP8 prediction within 0.02--0.14\,dB on four networks \\
-Parameter count, spatial size & no direct effect & -- & Faster R-CNN (26.8\,M) most robust, EfficientNet-B0 (5.3\,M) most fragile \\
-Decoders and heads & structural errors not visible in the head-input SQNR & -- & quantized TopK; duplicate suppression of YOLOv10-X \\
+\multicolumn{5}{@{}l}{\emph{Network structure}} \\
+Depth: number $N$ of quantized tensors & $-3$\,dB per doubling of $N$ & $\mathrm{SQNR}_\text{add}=-10\log_{10}N-10\log_{10}\langle\rho_n^2\rangle$ & 62 (Faster R-CNN) against 187 (YOLOv10-X) quantizers: 4.8\,dB & identity \\
+Weakest tensors (outlier channels, depthwise inputs, gates, attention) & dominate the mean noise; $-20$\,dB per decade of $\kappa$ & Lemma~\ref{lem:noise} & EfficientNet-B0: median quantizer 32.5\,dB, mean noise 24.2\,dB & proved, measured \\
+Channel imbalance under one scale & narrow channels are quantized coarsely & $10\log_{10}(12\,\sigma_c^2/s^2)$ per channel & MobileNetV2: 20.9\,dB for the narrowest, 42.5\,dB for the widest channel & proved \\
+Activation function & ReLU uses half of the grid; SiLU and unbounded ReLU outputs have heavy tails & -- & static INT8 prediction too optimistic by 0.4 (MobileNetV2) to 6.2\,dB (DenseNet-121) & measured \\
+Operators between quantizer and head & sigmoid gates, max pooling after unquantized layers and residual trunks attenuate; non-folded BN amplifies & $a_n$ (Eq.~\eqref{eq:amplification}), Eq.~\eqref{eq:bn} & $\bar\Gamma=0.13$ (Faster R-CNN) to 2.89 (EfficientNet-B0); BN gain median 1.24, $\rho=0.83$ with the measurement & closed form, measured \\
+Block type & in FP8, dense concatenation attenuated, residual blocks passed the noise on, depthwise linear bottlenecks amplified & $\bar\Gamma$ & 0.12 (DenseNet-121), 0.88 (ResNet-50), 2.25 and 3.3 (EfficientNet-B0, MobileNetV2) & hypothesis (4 networks) \\
+Parameter count, input size & no direct effect & -- & Faster R-CNN (26.8\,M) most robust, EfficientNet-B0 (5.3\,M) most fragile & measured \\
+Decoders and heads & structural errors not visible in the head-input SQNR & -- & quantized TopK ($-0.9$ mAP); broken duplicate suppression of YOLOv10-X (15.2\% duplicates) & measured \\
+\midrule
+\multicolumn{5}{@{}l}{\emph{Quantization choices}} \\
+Number format & INT8 noise depends on the range and the tails, FP8 and FP16 noise does not & Eqs.~\eqref{eq:sqnr-int8}, \eqref{eq:sqnr-fp} & static FP8 prediction within 0.02--0.14\,dB; FP8 loss at most 0.4 points & proved, measured \\
+Weight scales & per channel needed for INT8; FP8 indifferent & Lemma~\ref{lem:noise} on $w$ & INT8 37--43\,dB per channel against 26--34\,dB per tensor; FP8 about 32\,dB either way & exact \\
+Range setting (method, sample, order) & INT8 accuracy of fragile networks depends on it, FP8 does not & Eq.~\eqref{eq:mse} & EfficientNet-B0 24.8\% or 41.7\% depending on the first calibration image & measured \\
+Static scales under input shift & INT8 loses $20\log_{10}c$ and clips for $c>1$; FP8 unaffected & Corollary~\ref{cor:static} & YOLOv10-X relative INT8 loss 8.1\% $\to$ 36.2\% at contrast severity 5, FP8 at most 1.9\% & proved, measured \\
+Placement and selective precision & removing the largest contributions $\Gamma_{n\to h}\rho_n^2$ removes their noise & Proposition~\ref{prop:selective} & DenseNet-121 BN in FP16: 57.4\% $\to$ 61.6\%; EfficientNet-B0, 20 layers: 24.8\% $\to$ 66.0\% & proved, measured \\
 \botrule
 \end{tabular}
-\footnotetext{Effects on the injected and propagated noise; the relative accuracy loss follows from the head-input SQNR by the empirical relation of Section~\ref{sec:worked} (tenfold per 12\,dB).}
+\footnotetext{Status: \emph{proved}, derived under the stated assumptions (Supplementary Section~\ref{sec:supp-noise}); \emph{identity}, exact by definition; \emph{exact}, computed without approximation; \emph{measured}, observed in this article; \emph{hypothesis}, a pattern in few networks that remains to be tested. The relative accuracy loss follows from the head-input SQNR by the empirical relation of Section~\ref{sec:worked} (tenfold per 12\,dB).}
 \end{table}
 
 % BEGIN GENERATED X_selective

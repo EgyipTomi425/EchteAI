@@ -144,19 +144,28 @@ set by minimising the quantization error (Eq. 5), and Lemma 1 gives the injected
 SQNR_add = −10 log₁₀ N − 10 log₁₀⟨ρ²⟩ (−3 dB per doubling of the number N of quantized tensors, dominated by the
 weakest tensors). Width matters only through channel imbalance; parameter count and spatial size do not.
 
-### How network properties change the error (Table C14 of the article)
+### How network structure and quantization choices change the error (Table C14 of the article)
 
-| Property | Effect on the head-input SQNR | Formula | Example |
-|---|---|---|---|
-| Depth: number N of quantized tensors on the path to the head | −3 dB per doubling of N | SQNR_add = −10 log₁₀ N − 10 log₁₀⟨ρ²⟩ | 62 (Faster R-CNN) vs 187 (YOLOv10-X) quantizers: 4.8 dB |
-| Weakest tensors (outlier channels, depthwise inputs, gates, attention) | dominate the mean noise; −20 dB per decade of κ = α/σ | SQNR ≈ 52.9 dB − 20 log₁₀ κ | EfficientNet-B0: median quantizer 32.5 dB, but mean noise 24.2 dB |
-| Width and channel imbalance | one per-tensor scale quantizes narrow channels coarsely | 10 log₁₀(12 σ_c² / s²) per channel | MobileNetV2 `features.6.conv.3`: 20.9 dB narrowest vs 42.5 dB widest channel |
-| Activation function | ReLU uses half of the symmetric grid; SiLU and concatenated ReLU outputs have heavy tails | – | static INT8 prediction too optimistic by 0.4 (MobileNetV2) to 6.2 dB (DenseNet-121) |
-| Operators between quantizer and head | sigmoid gates, max pooling, residual trunks attenuate; non-folded BN amplifies | a_n = r_out / max r_in; BN gain (Eq. A3) | Γ̄ = 0.13 (Faster R-CNN) to 2.89 (EfficientNet-B0) |
-| Weights | negligible with per-channel INT8 scales; comparable to activations per tensor or in FP8 | Lemma 1 on the weights | 37–43 dB per channel, 26–34 dB per tensor, 32 dB in FP8 |
-| Number format | INT8 noise depends on range and tails; FP8/FP16 noise does not | 6.02 p + 7.44 dB (E4M3: 31.5 dB, FP16: 73.7 dB) | static FP8 prediction within 0.02–0.14 dB |
-| Parameter count, spatial size | no direct effect | – | Faster R-CNN (26.8 M) most robust, EfficientNet-B0 (5.3 M) most fragile |
-| Decoders and heads | structural errors not visible in the SQNR | – | quantized TopK; broken duplicate suppression of YOLOv10-X |
+| Property | Effect | Formula | Evidence in the article | Status |
+|---|---|---|---|---|
+| ***Network structure*** | | | | |
+| Depth: number N of quantized tensors | −3 dB per doubling of N | SQNR_add = −10 log₁₀ N − 10 log₁₀⟨ρ²⟩ | 62 (Faster R-CNN) vs 187 (YOLOv10-X) quantizers: 4.8 dB | identity |
+| Weakest tensors (outlier channels, depthwise inputs, gates, attention) | dominate the mean noise; −20 dB per decade of κ = α/σ | SQNR ≈ 52.9 dB − 20 log₁₀ κ | EfficientNet-B0: median quantizer 32.5 dB, mean noise 24.2 dB | proved, measured |
+| Channel imbalance under one scale | narrow channels are quantized coarsely | 10 log₁₀(12 σ_c² / s²) per channel | MobileNetV2: 20.9 dB narrowest vs 42.5 dB widest channel | proved |
+| Activation function | ReLU uses half of the grid; SiLU and unbounded ReLU outputs have heavy tails | – | static INT8 prediction too optimistic by 0.4 (MobileNetV2) to 6.2 dB (DenseNet-121) | measured |
+| Operators between quantizer and head | sigmoid gates, max pooling, residual trunks attenuate; non-folded BN amplifies | a_n = r_out / max r_in; BN gain (Eq. A3) | Γ̄ = 0.13 (Faster R-CNN) to 2.89 (EfficientNet-B0); BN gain median 1.24, ρ = 0.83 with the measurement | closed form, measured |
+| Block type | in FP8: dense concatenation attenuated, residual blocks passed the noise on, depthwise linear bottlenecks amplified | Γ̄ | 0.12 (DenseNet-121), 0.88 (ResNet-50), 2.25 and 3.3 (EfficientNet-B0, MobileNetV2) | **hypothesis** (4 networks) |
+| Parameter count, input size | no direct effect | – | Faster R-CNN (26.8 M) most robust, EfficientNet-B0 (5.3 M) most fragile | measured |
+| Decoders and heads | structural errors not visible in the SQNR | – | quantized TopK (−0.9 mAP); broken duplicate suppression of YOLOv10-X (15.2 % duplicates) | measured |
+| ***Quantization choices*** | | | | |
+| Number format | INT8 noise depends on range and tails; FP8/FP16 noise does not | 6.02 p + 7.44 dB (E4M3: 31.5 dB, FP16: 73.7 dB) | static FP8 prediction within 0.02–0.14 dB; FP8 loss at most 0.4 points | proved, measured |
+| Weight scales | per channel needed for INT8; FP8 indifferent | Lemma 1 on the weights | INT8 37–43 dB per channel vs 26–34 dB per tensor; FP8 about 32 dB either way | exact |
+| Range setting (method, sample, order) | INT8 accuracy of fragile networks depends on it, FP8 does not | Eq. 5 | EfficientNet-B0 24.8 % or 41.7 % depending on the first calibration image | measured |
+| Static scales under input shift | INT8 loses 20 log₁₀ c and clips for c > 1; FP8 unaffected | Corollary 2 | YOLOv10-X relative INT8 loss 8.1 % → 36.2 % at contrast severity 5, FP8 ≤ 1.9 % | proved, measured |
+| Placement and selective precision | removing the largest contributions Γₙ→ₕ ρₙ² removes their noise | Proposition 3 | DenseNet-121 BN in FP16: 57.4 % → 61.6 %; EfficientNet-B0, 20 layers: 24.8 % → 66.0 % | proved, measured |
+
+Status: *proved* under the stated assumptions, *identity* exact by definition, *exact* computed without approximation,
+*measured* observed in the article, *hypothesis* a pattern in few networks that remains to be tested.
 
 The relative accuracy loss then follows from the head-input SQNR (about ×10 per 12 dB, see below).
 
