@@ -13,6 +13,39 @@ MobileNetV2$^\dagger$ & INT8 & $+$0.4 & 1.1 & 0.98 & 20.3 & 19.2 & 17.1 & 1.61 &
 ResNet-50$^\dagger$ & INT8 & $+$5.4 & 6.3 & 0.34 & 15.8 & 10.1 & 16.9 & 0.21 & 68.7 & 1.1 [0.0, 2.0] & 1.5 \\
  & FP8 & 0.0 & 0.02 & -- & 11.5 & 11.5 & 12.0 & 0.88 & 67.5 & 2.8 [1.3, 4.3] & 3.7 \\
 \midrule
+ResNet-18$^\dagger$ & INT8 & $+$5.3 & 5.3 & 0.18 & 21.7 & 18.2 & 26.2 & 0.16 & 55.6 & -0.9 [$-$2.3, 0.4] & 0.3 \\
+ & FP8 & 0.0 & 0.04 & -- & 15.5 & 15.5 & 21.2 & 0.27 & 55.3 & -0.4 [$-$2.2, 1.4] & 0.7 \\
+\midrule
+ResNet-34$^\dagger$ & INT8 & $+$4.7 & 5.0 & 0.46 & 18.7 & 15.6 & 26.2 & 0.09 & 59.7 & -1.2 [$-$2.7, 0.3] & 0.3 \\
+ & FP8 & 0.0 & 0.06 & -- & 13.0 & 13.0 & 21.8 & 0.13 & 57.9 & 1.9 [0.0, 3.7] & 0.6 \\
+\midrule
+ResNet-101$^\dagger$ & INT8 & $+$4.9 & 5.1 & 0.47 & 12.7 & 8.9 & 19.4 & 0.09 & 67.8 & 0.3 [$-$1.2, 1.7] & 0.9 \\
+ & FP8 & 0.0 & 0.05 & -- & 8.5 & 8.5 & 13.6 & 0.31 & 67.7 & 0.4 [$-$1.6, 2.4] & 2.8 \\
+\midrule
+ResNeXt-50$^\dagger$ & INT8 & $+$3.3 & 4.0 & 0.30 & 16.0 & 13.9 & 18.3 & 0.37 & 68.1 & 0.3 [$-$1.1, 1.8] & 1.1 \\
+ & FP8 & 0.0 & 0.05 & -- & 11.5 & 11.5 & 11.6 & 0.97 & 67.2 & 1.6 [$-$0.3, 3.6] & 4.0 \\
+\midrule
+RegNetY-800MF$^\dagger$ & INT8 & $+$3.9 & 4.9 & 0.77 & 15.0 & 10.9 & 16.0 & 0.31 & 64.2 & 0.8 [$-$1.1, 2.4] & 1.7 \\
+ & FP8 & 0.0 & 0.05 & -- & 11.2 & 11.2 & 12.7 & 0.70 & 62.9 & 2.8 [0.8, 4.9] & 3.2 \\
+\midrule
+GoogLeNet$^\dagger$ & INT8 & $+$4.8 & 5.6 & 0.54 & 18.4 & 14.0 & 22.1 & 0.16 & 56.0 & 0.7 [$-$0.9, 2.4] & 0.6 \\
+ & FP8 & 0.0 & 0.10 & -- & 11.1 & 11.1 & 16.1 & 0.32 & 54.9 & 2.7 [0.3, 5.0] & 1.7 \\
+\midrule
+MobileNetV3-L$^\dagger$ & INT8 & $+$3.2 & 3.3 & 0.89 & 13.3 & 11.4 & 6.4 & 3.20 & 58.8 & 3.6 [0.6, 6.6] & 10.7 \\
+ & FP8 & 0.0 & 0.20 & -- & 11.8 & 11.8 & 7.4 & 2.69 & 57.9 & 5.1 [1.8, 8.3] & 8.8 \\
+\midrule
+MnasNet$^\dagger$ & INT8 & $+$4.7 & 5.2 & 0.50 & 20.3 & 15.7 & 16.3 & 0.88 & 58.3 & 2.7 [0.3, 5.0] & 1.7 \\
+ & FP8 & 0.0 & 0.07 & -- & 11.9 & 11.9 & 10.6 & 1.34 & 56.1 & 6.3 [3.4, 9.1] & 4.8 \\
+\midrule
+ShuffleNetV2$^\dagger$ & INT8 & $+$4.7 & 4.9 & 0.64 & 20.0 & 15.7 & 18.5 & 0.52 & 54.1 & 2.5 [0.4, 4.8] & 1.1 \\
+ & FP8 & 0.0 & 0.04 & -- & 11.7 & 11.7 & 12.6 & 0.81 & 52.7 & 5.0 [2.0, 8.1] & 3.3 \\
+\midrule
+EfficientNet-B1$^\dagger$ & INT8 & $+$6.4 & 7.6 & 0.70 & 10.7 & 2.2 & -4.9 & 5.08 & 0.6 & 99.1 [98.2, 99.7] & 89.6 \\
+ & FP8 & 0.0 & 0.16 & -- & 9.7 & 9.6 & 6.4 & 2.13 & 62.2 & 6.0 [3.4, 8.8] & 10.8 \\
+\midrule
+DenseNet-169$^\dagger$ & INT8 & $+$6.4 & 6.2 & 0.43 & 12.4 & 7.6 & 11.2 & 0.44 & 60.3 & 1.8 [$-$0.7, 4.4] & 4.3 \\
+ & FP8 & 0.0 & 0.05 & -- & 6.4 & 6.4 & 15.9 & 0.11 & 61.1 & 0.5 [$-$1.5, 2.6] & 1.8 \\
+\midrule
 EfficientNet-B0 & INT8 & $+$4.0 & 5.0 & 0.79 & 15.2 & 9.3 & 1.0 & 6.86 & 41.5 & 36.8 [33.9, 39.6] & 29.7 \\
  & FP8 & 0.0 & 0.11 & -- & 11.1 & 11.1 & 7.6 & 2.25 & 61.1 & 7.1 [5.0, 9.0] & 8.6 \\
 \midrule
@@ -20,5 +53,5 @@ DenseNet-121 & INT8 & $+$6.2 & 6.1 & 0.36 & 14.1 & 9.2 & 14.2 & 0.32 & 59.5 & 2.
  & FP8 & 0.0 & 0.04 & -- & 7.8 & 7.8 & 17.0 & 0.12 & 60.7 & 0.6 [$-$0.9, 1.9] & 1.5 \\
 \botrule
 \end{tabular}
-\footnotetext{ImageNetV2, 128 calibration and 2000 evaluation images, CPU simulation (\texttt{44\_validate\_static.py}): symmetric per-tensor quantizers on every batch-normalised tensor (INT8: MSE-optimal range; FP8 E4M3: maximum), weights per output channel. Top-1 of FP32: MobileNetV2$^\dagger$ 59.2\%, ResNet-50$^\dagger$ 69.4\%, EfficientNet-B0 65.8\%, DenseNet-121 61.1\%. Quantizer SQNR: static prediction from the BN parameters against the exact injected SQNR on 64 evaluation images. SQNR$_\text{add}$ includes the weight quantizers. Relative loss: measured with a paired bootstrap interval, and predicted from the measured SQNR$_h$ with the calibration of Table~\ref{tab:prediction}. The simulated placement and calibration differ from the TensorRT toolchain, so the INT8 numbers of EfficientNet-B0 and DenseNet-121 differ from Table~\ref{tab:accuracy}. $^\dagger$ not used elsewhere in this article.}
+\footnotetext{ImageNetV2, 128 calibration and 2000 evaluation images, CPU simulation (\texttt{44\_validate\_static.py}): symmetric per-tensor quantizers on every batch-normalised tensor (INT8: MSE-optimal range; FP8 E4M3: maximum), weights per output channel. Top-1 of FP32: MobileNetV2$^\dagger$ 59.2\%, ResNet-50$^\dagger$ 69.4\%, ResNet-18$^\dagger$ 55.1\%, ResNet-34$^\dagger$ 59.0\%, ResNet-101$^\dagger$ 68.0\%, ResNeXt-50$^\dagger$ 68.3\%, RegNetY-800MF$^\dagger$ 64.7\%, GoogLeNet$^\dagger$ 56.4\%, MobileNetV3-L$^\dagger$ 61.0\%, MnasNet$^\dagger$ 59.9\%, ShuffleNetV2$^\dagger$ 55.5\%, EfficientNet-B1$^\dagger$ 66.2\%, DenseNet-169$^\dagger$ 61.4\%, EfficientNet-B0 65.8\%, DenseNet-121 61.1\%. Quantizer SQNR: static prediction from the BN parameters against the exact injected SQNR on 64 evaluation images. SQNR$_\text{add}$ includes the weight quantizers. Relative loss: measured with a paired bootstrap interval, and predicted from the measured SQNR$_h$ with the calibration of Table~\ref{tab:prediction}. The simulated placement and calibration differ from the TensorRT toolchain, so the INT8 numbers of EfficientNet-B0 and DenseNet-121 differ from Table~\ref{tab:accuracy}. $^\dagger$ not used elsewhere in this article.}
 \end{sidewaystable}

@@ -25,7 +25,7 @@ HOROWITZ = [("8-bit integer add", 0.03), ("32-bit integer add", 0.1), ("16-bit f
 # Tables wider than the text block go on a landscape page (Springer template: sidewaystable) in a smaller font.
 WIDE = {"tab:accuracy", "tab:layerstats", "tab:aibo", "tab:engines", "tab:localization", "tab:propagation",
         "tab:placement", "tab:duplicates", "tab:calibmethods", "tab:deployment", "tab:modelcheck", "tab:formulas",
-        "tab:prediction", "tab:static", "tab:staticval", "tab:staticpct"}
+        "tab:prediction", "tab:static", "tab:staticval", "tab:staticpct", "tab:extcheck"}
 SMALL = {"tab:models", "tab:datasets"}
 COMPACT = {"tab:selective", "tab:operating", "tab:calibvar"}   # fit the text width with narrower column gaps
 
@@ -848,7 +848,21 @@ def table_prediction(cfg, out):
           f"{f_head['db_per_decade']:.1f}\\,dB per decade, $R^2={f_head['r2']:.2f}$ for SQNR$_h$).")
 
 
-STATIC_LABELS = {"mobilenet_v2": r"MobileNetV2$^\dagger$", "resnet50": r"ResNet-50$^\dagger$"}
+STATIC_LABELS = {"mobilenet_v2": r"MobileNetV2$^\dagger$", "resnet50": r"ResNet-50$^\dagger$",
+                 "mobilenet_v3_large": r"MobileNetV3-L$^\dagger$", "shufflenet_v2_x1_0": r"ShuffleNetV2$^\dagger$",
+                 "mnasnet1_0": r"MnasNet$^\dagger$", "resnet18": r"ResNet-18$^\dagger$",
+                 "regnet_y_800mf": r"RegNetY-800MF$^\dagger$", "googlenet": r"GoogLeNet$^\dagger$",
+                 "resnet34": r"ResNet-34$^\dagger$", "efficientnet_b1": r"EfficientNet-B1$^\dagger$",
+                 "densenet169": r"DenseNet-169$^\dagger$", "resnext50_32x4d": r"ResNeXt-50$^\dagger$",
+                 "resnet101": r"ResNet-101$^\dagger$"}
+VALIDATION_ORDER = ["mobilenet_v2", "resnet50", "resnet18", "resnet34", "resnet101", "resnext50_32x4d",
+                    "regnet_y_800mf", "googlenet", "mobilenet_v3_large", "mnasnet1_0", "shufflenet_v2_x1_0",
+                    "efficientnet_b1", "densenet169"]
+FAMILY = {"resnet18": "residual", "resnet34": "residual", "resnet50": "residual", "resnet101": "residual",
+          "resnext50_32x4d": "residual", "regnet_y_800mf": "residual", "googlenet": "inception",
+          "mobilenet_v2": "depthwise", "mobilenet_v3_large": "depthwise", "mnasnet1_0": "depthwise",
+          "shufflenet_v2_x1_0": "depthwise", "efficientnet_b0": "depthwise", "efficientnet_b1": "depthwise",
+          "densenet121": "dense", "densenet169": "dense"}
 
 
 def table_static(cfg, out):
@@ -898,7 +912,7 @@ def table_static_validation(cfg, out):
     if not (t / "static_validation.csv").exists():
         return
     v = pd.read_csv(t / "static_validation.csv")
-    order = [m for m in ["mobilenet_v2", "resnet50"] + ORDER if m in set(v.model)]
+    order = [m for m in VALIDATION_ORDER + ORDER if m in set(v.model)]
     v = v.set_index("model").loc[order]
     body = [r"Model & Format & \multicolumn{3}{c}{Quantizer SQNR, static $-$ measured} & "
             r"\multicolumn{2}{c}{SQNR$_\text{add}$ (dB)} & SQNR$_h$ & $\bar\Gamma$ & Top-1 & "
@@ -940,7 +954,7 @@ def table_static_percent(cfg, out):
     if not (t / "static_validation.csv").exists():
         return
     v = pd.read_csv(t / "static_validation.csv")
-    order = [m for m in ["mobilenet_v2", "resnet50"] + ORDER if m in set(v.model)]
+    order = [m for m in VALIDATION_ORDER + ORDER if m in set(v.model)]
     v = v.set_index("model").loc[order]
     r = lambda db: f"{100 * 10 ** (-db / 20):.1f}"
     body = [r"Model & Format & \multicolumn{2}{c}{Injected per quantizer (\%)} & "
@@ -965,6 +979,72 @@ def table_static_percent(cfg, out):
           "unlabelled images, and only the relative loss needs labels. $^\\dagger$ not used elsewhere in this article.")
 
 
+def table_extended_check(cfg, out):
+    """Extended data: out-of-sample check of the propagation factor and of the loss relation on all networks of the
+    simulated check (44_validate_static.py). Networks whose head-input SQNR lies outside the range of the five
+    calibration networks are marked and left out of the summary statistics (outside the validity range)."""
+    t = results_dir(cfg, "tables")
+    if not (t / "static_validation.csv").exists() or not (t / "prediction.csv").exists():
+        return
+    from scipy import stats
+    v = pd.read_csv(t / "static_validation.csv")
+    order = [m for m in VALIDATION_ORDER + ORDER if m in set(v.model)]
+    v = v.set_index("model").loc[order]
+    cal = pd.read_csv(t / "prediction.csv")
+    lo_db, hi_db = cal.sqnr_head_db.min(), cal.sqnr_head_db.max()
+    rows, summary = [], []
+    for m in order:
+        for f in ("int8", "fp8"):
+            x = v.loc[m]
+            h = x[f"{f}_sqnr_head_db"]
+            rows.append({"model": m, "family": FAMILY.get(m, "other"), "format": f, "fp32_top1": x["fp32_top1"],
+                         "sqnr_head_db": h, "gamma_bar": x[f"{f}_gamma_bar"], "rel_loss": x[f"{f}_rel_loss"],
+                         "rel_loss_lo": x[f"{f}_rel_loss_lo"], "rel_loss_hi": x[f"{f}_rel_loss_hi"],
+                         "rel_loss_predicted": x[f"{f}_rel_loss_predicted"],
+                         "in_range": bool(lo_db <= h <= hi_db)})
+    d = pd.DataFrame(rows)
+    d["within_ci"] = (d.rel_loss_lo <= d.rel_loss_predicted) & (d.rel_loss_predicted <= d.rel_loss_hi)
+    d["factor"] = np.maximum(d.rel_loss_predicted, 1e-4) / np.maximum(d.rel_loss, 1e-4)
+    d["factor"] = np.where(d.factor < 1, 1 / d.factor, d.factor)
+    d.to_csv(t / "extended_check.csv", index=False)
+    for f in ("int8", "fp8", "both"):
+        e = d[d.in_range] if f == "both" else d[(d.format == f) & d.in_range]
+        rho, p = stats.spearmanr(e.sqnr_head_db, e.rel_loss)
+        big = e[e.rel_loss > 0.01]
+        summary.append({"format": f, "n": len(e), "n_out_of_range": int((~d.in_range & ((d.format == f) | (f == "both"))).sum()),
+                        "spearman_rho": rho, "p": p, "within_ci": int(e.within_ci.sum()),
+                        "median_factor_loss_gt_1pct": float(big.factor.median()) if len(big) else np.nan,
+                        "max_factor_loss_gt_1pct": float(big.factor.max()) if len(big) else np.nan, "n_loss_gt_1pct": len(big)})
+    fam = d[d.in_range].groupby(["format", "family"]).gamma_bar.agg(["median", "min", "max", "count"]).reset_index()
+    pd.DataFrame(summary).to_csv(t / "extended_summary.csv", index=False)
+    fam.to_csv(t / "extended_family.csv", index=False)
+    body = [r"Model & Block type & FP32 top-1 & Format & SQNR$_h$ (dB) & $\bar\Gamma$ & \multicolumn{2}{c}{Relative loss (\%)} & In range \\",
+            r"\cmidrule{7-8}", r" & & (\%) & & & & measured [95\% CI] & predicted & \\", r"\midrule"]
+    for m in order:
+        for _, r in d[d.model == m].iterrows():
+            name = MODEL_LABELS.get(m, STATIC_LABELS.get(m, m)) if r.format == "int8" else ""
+            fam_ = r.family if r.format == "int8" else ""
+            top = f"{100 * r.fp32_top1:.1f}" if r.format == "int8" else ""
+            body.append(f"{name} & {fam_} & {top} & {r.format.upper()} & {fmt(r.sqnr_head_db)} & {r.gamma_bar:.2f} & "
+                        f"{100 * r.rel_loss:.1f} [{100 * r.rel_loss_lo:.1f}, {100 * r.rel_loss_hi:.1f}] & "
+                        f"{100 * r.rel_loss_predicted:.1f} & {'yes' if r.in_range else 'no'} \\\\".replace("[-", "[$-$").replace("& -", "& $-$"))
+    sm = pd.DataFrame(summary).set_index("format")
+    fam_txt = "; ".join(f"{fm.upper()} {g.family}: {g['median']:.2f} ({g['min']:.2f}--{g['max']:.2f}, $n={int(g['count'])}$)"
+                        for fm in ("int8", "fp8") for _, g in fam[fam.format == fm].iterrows())
+    notes = (f"ImageNetV2, simulated quantization on the CPU (\\texttt{{44\\_validate\\_static.py}}), 128 calibration images; "
+             f"evaluation on 2\\,000 images for the networks of Table~\\ref{{tab:staticval}} and on 1\\,000 images for the "
+             f"others. Predicted: from the measured SQNR$_h$ with the relation of Section~\\ref{{sec:worked}}, calibrated on "
+             f"the five TensorRT networks. In range: SQNR$_h$ within the range of the calibration networks "
+             f"({lo_db:.1f} to {hi_db:.1f}\\,dB); rows outside it are reported but not used in the summary. Summary over the "
+             f"rows in range: Spearman $\\rho$ between SQNR$_h$ and the measured loss {sm.loc['both','spearman_rho']:.2f} "
+             f"($n={int(sm.loc['both','n'])}$, $p={sm.loc['both','p']:.1g}$); prediction within the 95\\% CI in "
+             f"{int(sm.loc['both','within_ci'])} of {int(sm.loc['both','n'])} cases; for losses above 1\\%, median miss "
+             f"$\\times${sm.loc['both','median_factor_loss_gt_1pct']:.2f}, largest $\\times${sm.loc['both','max_factor_loss_gt_1pct']:.2f}. "
+             f"$\\bar\\Gamma$ by block type, median (range): {fam_txt}. $^\\dagger$ not used elsewhere in this article.")
+    write(out / "X_extended_check.tex", body, "llrlrrrrl",
+          "Out-of-sample check of the propagation factor and of the loss relation", "tab:extcheck", notes)
+
+
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="Write the LaTeX tables of the article from the result tables.")
@@ -987,6 +1067,6 @@ if __name__ == "__main__":
               table_hardware, table_engines, table_localization, table_propagation, table_selective,
               table_calibration_variability, table_operating_point, table_duplicates,
               table_calibration_methods, table_deployment, table_prediction, table_formulas, table_model_check, table_static,
-              table_static_validation, table_static_percent):
+              table_static_validation, table_static_percent, table_extended_check):
         f(cfg, out)
         print("done:", f.__name__, flush=True)
