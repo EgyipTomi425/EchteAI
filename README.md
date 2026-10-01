@@ -288,6 +288,28 @@ recovers 57.4 → 61.6 % with its pre-activation batch normalisation in FP16, YO
 class-wise NMS (its INT8 head loses the implicit duplicate suppression), and Faster R-CNN needs nothing.
 Cross-layer equalisation and weight-adapting PTQ (AdaRound, BRECQ) were not evaluated.
 
+## Quantization under adverse conditions (Section 3.5)
+
+Fog, snow, frost, low light, glare, low contrast, sensor noise and motion blur (COCO-C protocol, severities 1–5;
+low light: gamma darkening with shot noise), applied to the 500 analysis images:
+
+![mAP of FP32, FP16, INT8 and FP8 under eight adverse conditions](docs/img/S_robustness.png)
+
+* **Faster R-CNN in INT8** stays within −1.0 to +0.3 mAP of FP32 in all 40 condition–severity pairs, even though
+  the corruptions themselves cost FP32 up to 34 points.
+* **YOLOv10 in INT8** suffers under low contrast. The relative INT8 loss grows from 2.9 % and 8.1 % on clean images
+  to 14.8 % and 36.2 % at the strongest contrast reduction (YOLOv10-X: 25.8 instead of 40.4 mAP).
+* **FP8** stays within 0.4–1.9 % of FP32 at every contrast level.
+* **Why:** TensorRT uses static scales fixed at calibration. A weaker signal therefore loses
+  20 log₁₀ c dB of INT8 precision but nothing in FP8 (Corollary 2). In YOLOv10-X the self-attention activations also
+  grow beyond the tight INT8 range and are clipped (11–15 dB).
+* **Remedies:** none of the label-free INT8 remedies removed the penalty. Robust calibration recovered at most
+  0.3 mAP, an FP16 input layer at most 1.2 mAP, and max calibration doubled the penalty.
+* **Single scene:** INT8 YOLOv10-X loses the van at contrast severity 4 (head-input SQNR 3.4 → 2.0 dB), while FP8
+  keeps every detection at 8.5 dB:
+
+![Qualitative example: YOLOv10-X in FP32, INT8 and FP8 on a clean and a low-contrast traffic scene](docs/img/S_qualitative.png)
+
 ## Limitations
 
 * The loss law (×10 per 12 dB) is fitted on five networks and two metrics; the out-of-sample check covers four
