@@ -404,7 +404,7 @@ low light: gamma darkening with shot noise), applied to the 500 analysis images:
 
 ![mAP of FP32, FP16, INT8 and FP8 under eight adverse conditions](docs/img/S_robustness.png)
 
-* **Faster R-CNN in INT8** stays within −1.0 to +0.3 mAP of FP32 in all 40 condition–severity pairs, even though
+* **Faster R-CNN in INT8** stays within −1.0 to +0.2 mAP of FP32 in all 40 condition–severity pairs, even though
   the corruptions themselves cost FP32 up to 34 points.
 * **YOLOv10 in INT8** suffers under low contrast. The relative INT8 loss grows from 2.9 % and 8.1 % on clean images
   to 14.8 % and 36.2 % at the strongest contrast reduction (YOLOv10-X: 25.8 instead of 40.4 mAP).
