@@ -407,9 +407,10 @@ def report_scenarios(s, layers, acts):
         if val.exists():
             sim = list(100 * pd.read_csv(val)["fp8_rel_loss"].values)
         print(f"               FP8 range from the measured networks: {min(fp8):.1f}-{max(fp8):.1f} % relative loss with TensorRT"
-              + (f", {min(sim):.1f}-{max(sim):.1f} % in the" if sim else ""))
+              + (f", {max(0.0, min(sim)):.1f}-{max(sim):.1f} % in the" if sim else ""))
+        n_sim = len(sim)
         if sim:
-            print("               simulated check of four classifiers. Expect a loss in this range; the static FP8 SQNR_add does not")
+            print(f"               simulated check of {n_sim} classifiers. Expect a loss in this range; the static FP8 SQNR_add does not")
             print("               order the networks (the measured losses are unrelated to it), and a network that amplifies the")
             print("               noise reaches the upper end (MobileNetV2: 10.3 %, Gamma_bar 3.3).")
         print("               The static analysis ranks networks (Spearman 0.9 on the five) but does not see how a "

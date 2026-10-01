@@ -21,7 +21,7 @@ whose code is kept under the tag [`citds-2026`](https://github.com/EgyipTomi425/
    A simulated check on 15 networks confirms the loss relation (18 of 25 cases within the 95 % interval, median
    miss ×1.5) and shows that the block type indicates Γ̄ but does not determine it.
 2. **FP8 noise does not depend on the data, INT8 noise does.** FP8 E4M3 injects about 31.5 dB (2.7 %) per quantizer
-   whatever the activations look like, so the static analysis predicts it within 0.02–0.14 dB without images. INT8
+   whatever the activations look like, so the static analysis predicts it within 0.02–0.20 dB (15 networks) without images. INT8
    noise depends on the range and the tails, and the static estimate is 4–6 dB too optimistic for SiLU and ReLU outputs.
 3. **Noise is not accuracy.** A 25 % deviation of the head-input features cost ResNet-50 only 2.8 % of its top-1
    accuracy. Accuracy needs either labels or the measured head-input SQNR (loss ×10 per 12 dB, within about ×2).
@@ -133,9 +133,9 @@ Example output (ResNet-50, a network not used elsewhere in the article):
   head input   expected deviation at the head input for the propagation factors measured so far
                (SQNR_h = SQNR_add - 10 log10 Gamma_bar; best case: strongest attenuation, worst case: strongest
                amplification; the network itself is somewhere in between, one measurement tells where):
-                 INT8, per-channel weights     5.8 -  42.4 % of the signal (Gamma_bar 0.13-6.86)
-                 INT8, per-tensor weights     15.2 - 100.0 % of the signal (Gamma_bar 0.13-6.86)
-                 FP8 E4M3                      9.3 -  48.4 % of the signal (Gamma_bar 0.12-3.28)
+                 INT8, per-channel weights     4.8 -  42.4 % of the signal (Gamma_bar 0.09-6.86)
+                 INT8, per-tensor weights     12.5 - 100.0 % of the signal (Gamma_bar 0.09-6.86)
+                 FP8 E4M3                      8.9 -  48.4 % of the signal (Gamma_bar 0.11-3.28)
   references   static INT8 SQNR_add of this network: 19.0 dB. Measured networks of the article (static SQNR_add, measured relative INT8 loss with TensorRT):
                      frcnn_r50_fpn             20.6 dB     0.7%
                  --> resnet50                  19.0 dB
@@ -153,8 +153,8 @@ Example output (ResNet-50, a network not used elsewhere in the article):
                      yolov10s                   8.7 dB     0.9%
                      densenet121                7.8 dB     0.5%
                      yolov10x                   6.3 dB     0.3%
-               FP8 range from the measured networks: 0.3-1.0 % relative loss with TensorRT, 0.6-10.3 % in the
-               simulated check of four classifiers. Expect a loss in this range; the static FP8 SQNR_add does not
+               FP8 range from the measured networks: 0.3-1.0 % relative loss with TensorRT, 0.0-10.3 % in the
+               simulated check of 15 classifiers. Expect a loss in this range; the static FP8 SQNR_add does not
                order the networks (the measured losses are unrelated to it), and a network that amplifies the
                noise reaches the upper end (MobileNetV2: 10.3 %, Gamma_bar 3.3).
                The static analysis ranks networks (Spearman 0.9 on the five) but does not see how a network propagates the noise;
@@ -182,7 +182,7 @@ weakest tensors). Width matters only through channel imbalance; parameter count 
 | Parameter count, input size | no direct effect | – | Faster R-CNN (26.8 M) most robust, EfficientNet-B0 (5.3 M) most fragile | measured |
 | Decoders and heads | structural errors not visible in the SQNR | – | quantized TopK (−0.9 mAP); broken duplicate suppression of YOLOv10-X (15.2 % duplicates) | measured |
 | ***Quantization choices*** | | | | |
-| Number format | INT8 noise depends on range and tails; FP8/FP16 noise does not | 6.02 p + 7.44 dB (E4M3: 31.5 dB, FP16: 73.7 dB) | static FP8 prediction within 0.02–0.14 dB; FP8 loss at most 0.4 points | proved, measured |
+| Number format | INT8 noise depends on range and tails; FP8/FP16 noise does not | 6.02 p + 7.44 dB (E4M3: 31.5 dB, FP16: 73.7 dB) | static FP8 prediction within 0.02–0.20 dB (15 networks); FP8 loss at most 0.4 points | proved, measured |
 | Weight scales | per channel needed for INT8; FP8 indifferent | Lemma 1 on the weights | INT8 37–43 dB per channel vs 26–34 dB per tensor; FP8 about 32 dB either way | exact |
 | Range setting (method, sample, order) | INT8 accuracy of fragile networks depends on it, FP8 does not | Eq. 5 | EfficientNet-B0 24.8 % or 41.7 % depending on the first calibration image | measured |
 | Static scales under input shift | INT8 loses 20 log₁₀ c and clips for c > 1; FP8 unaffected | Corollary 2 | YOLOv10-X relative INT8 loss 8.1 % → 36.2 % at contrast severity 5, FP8 ≤ 1.9 % | proved, measured |
@@ -342,7 +342,7 @@ Results:
 | Question | Answer of the static analysis | Reliability |
 |---|---|---|
 | Per-channel or per-tensor weight scales? | network SQNR for both | exact (no model involved) |
-| How much noise does FP8 inject? | per quantizer and for the network | within 0.02–0.14 dB per quantizer and 0.05 dB for the network on four networks: floating-point noise does not depend on the distribution (Lemma 1) |
+| How much noise does FP8 inject? | per quantizer and for the network | within 0.02–0.20 dB per quantizer (15 networks; 0.02–0.14 dB on the first four) and 0.05 dB for the network on four networks: floating-point noise does not depend on the distribution (Lemma 1) |
 | How much noise does INT8 inject? | per quantizer and for the network | within ~1 dB for bounded or unrectified activations (MobileNetV2); 4–6 dB too optimistic for SiLU and unbounded ReLU outputs (error amplitude underestimated ~2×); 8–12 dB more optimistic than the entropy calibration of TensorRT |
 | Which batch normalisations amplify noise? | closed-form gain (Eq. A3) | ranks the measured amplification with ρ = 0.83 (DenseNet-121) |
 | How does the network rank? | position among the five measured networks | orders their INT8 loss with ρ = 0.9 (one exchange) |
