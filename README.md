@@ -3,98 +3,126 @@
 > T. Menyhárt, A. Hajdu, R. Lakatos: *PEP-AI Validated Quantization for Energy-Efficient Perception in
 > Intelligent Transportation Systems*. Journal manuscript (in preparation).
 
-**Manuscript (PDF): [`paper/PEP-AI_manuscript.pdf`](paper/PEP-AI_manuscript.pdf)**
+**Manuscript (PDF): [`paper/PEP-AI_manuscript.pdf`](paper/PEP-AI_manuscript.pdf)** · LaTeX source: [`paper/`](paper/)
+(Springer Nature template; compiles as is on Overleaf or with `latexmk -pdf main.tex`).
 
-The LaTeX source of the article is in [`paper/`](paper/) (Springer Nature template, single `main.tex`,
-figures in `paper/figures/`). The folder compiles as is with pdfLaTeX and BibTeX, e.g. after uploading
-it to Overleaf or with `latexmk -pdf main.tex`. The TikZ diagrams of the Methods section are rebuilt
-from `paper/figures/src/` with `build.sh`; all other figures and the generated tables are written by
-the pipeline (`scripts/15_assemble_paper.py`).
+PEP-AI (*Precise, Explainable and Provable AI*) validates post-training quantized networks at the activation
+level instead of on output accuracy alone. The repository contains the article, a static analysis tool that
+tells from the FP32 parameters alone how much noise INT8, FP8 and FP16 inject into any PyTorch model, and the
+complete pipeline that produced every number of the article (journal extension of the CITDS 2026 paper,
+whose code is kept under the tag [`citds-2026`](https://github.com/EgyipTomi425/EchteAI/tree/citds-2026)).
 
-PEP-AI (*Precise, Explainable and Provable AI*) validates post-training quantized convolutional
-networks at the activation level instead of on output accuracy alone. This repository contains the
-article and the complete, reproducible pipeline of the journal extension of
+## Results in brief
 
-> T. Menyhárt, A. Hajdu, R. Lakatos: *Quantization-Induced Error Propagation: Activation Analysis within
-> the PEP-AI Framework for Sustainable High-Efficiency and Explainable AI*, CITDS 2026.
+Measured on an NVIDIA H200 with TensorRT 11.3 (COCO val2017 box mAP, ImageNetV2 top-1; Table 6 of the article):
 
-The code of the conference paper (simulated INT8 on a Faster R-CNN backbone) is preserved under the
-tag [`citds-2026`](https://github.com/EgyipTomi425/EchteAI/tree/citds-2026).
+| Network | Metric | FP32 | FP16 | INT8 | FP8 |
+|---|---|---|---|---|---|
+| Faster R-CNN R50-FPN | accuracy (%) | 37.0 | 36.9 | **36.7** (−0.25) | 36.6 (−0.37) |
+| | latency bs1 (ms) | 6.29 | 0.91 | 0.74 | 0.91 |
+| | energy bs8 (mJ/img) | 3184 | 443 | 281 | 392 |
+| YOLOv10-S | accuracy (%) | 46.0 | 46.0 | **43.8** (−2.24) | 45.6 (−0.41) |
+| | latency bs1 (ms) | 1.78 | 0.81 | 0.69 | 0.68 |
+| | energy bs8 (mJ/img) | 409 | 109 | 63.3 | 96.7 |
+| YOLOv10-X | accuracy (%) | 54.0 | 54.0 | **47.8** (−6.21) | 53.9 (−0.15) |
+| | latency bs1 (ms) | 6.06 | 1.99 | 1.57 | 1.79 |
+| | energy bs8 (mJ/img) | 2477 | 582 | 295 | 430 |
+| EfficientNet-B0 | accuracy (%) | 65.8 | 65.8 | **24.8** (−40.97) | 65.4 (−0.39) |
+| | latency bs1 (ms) | 0.59 | 0.42 | 0.38 | 0.52 |
+| | energy bs8 (mJ/img) | 45.7 | 20.6 | 12.7 | 26.0 |
+| DenseNet-121 | accuracy (%) | 62.0 | 62.0 | **57.4** (−4.68) | 61.7 (−0.32) |
+| | latency bs1 (ms) | 2.78 | 1.59 | 1.39 | 0.71 |
+| | energy bs8 (mJ/img) | 152 | 70.5 | 40.6 | 40.9 |
 
-## What the pipeline does
+* INT8 is 1.6–11.8× faster than strict FP32 and 1.1–1.5× faster than FP16, and uses 72–91 % less energy per image.
+* FP16 is lossless; FP8 loses at most 0.4 points; INT8 loses between 0.25 mAP and 41 top-1 points.
+* The difference is explained by the noise model: a single INT8 quantizer is benign (27–33 dB) and predictable,
+  whereas the network decides whether it attenuates (Faster R-CNN, Γ̄ = 0.13) or amplifies (EfficientNet-B0,
+  Γ̄ = 2.89) the injected noise.
+* For a fleet of 1 000 vehicles, INT8 saves up to 1 GWh, 191 kEUR and 251 t CO₂ per year (Section 3.7).
 
-| | |
-|---|---|
-| Models | Faster R-CNN R50-FPN (backbone + FPN in TensorRT), YOLOv10-S, YOLOv10-X, EfficientNet-B0, DenseNet-121 |
-| Precisions | strict FP32 (TF32 off), FP16, INT8 (explicit Q/DQ, FP16 fallback), INT8 with FP32 fallback (analysis), FP8 E4M3 |
-| Runtime | TensorRT 11 strongly typed engines on an NVIDIA H200; quantization with NVIDIA ModelOpt |
-| Data | COCO 2017 (512 train images for calibration, 5 000 val images for evaluation), ImageNetV2 matched-frequency |
+**How to read dB.** SQNR = 10 log₁₀(signal power / noise power); the relative error is r = 10^(−SQNR/20):
 
-Measurements: task accuracy with paired bootstrap CIs; latency (p50, p99, jitter) and NVML energy per
-image; memory traffic and executed kernel precision from the engine inspector; layer-wise activation
-deviation (MRE, SQNR) on 500 images; deviation versus detection errors; robustness under eight adverse
-conditions (COCO-C and low light); label-free diagnosis and repair (placement, calibration, selective
-precision); quantization-noise and propagation model checks; monocular distance error; AIBO fleet
-energy, cost and CO₂ scenario.
+| SQNR | 40 dB | 30 dB | 20 dB | 10 dB | 0 dB |
+|---|---|---|---|---|---|
+| error relative to the signal | 1 % | 3.2 % | 10 % | 32 % | 100 % |
 
-## Main result: predicting INT8 tolerance (Section 3.8 of the article)
+A difference of 6 dB is a factor of two in the error amplitude, 3 dB a factor of two in its power.
 
-The quantization error of a network splits into the noise injected by each quantizer, which FP32
-statistics predict, and its propagation to the task head, which one measurement of the quantized
-network reveals. This gives a procedure that tells, before deployment, whether INT8 is safe:
+## Static analysis of any model (no images, no execution)
 
-| Step | What is computed | Formula (INT8 / FP8) | Accuracy on the five networks |
-|---|---|---|---|
-| 1 | noise of each quantizer from FP32 activations and calibrated scales | SQNR ≈ 52.9 dB − 20 log₁₀ κ / 31.5 dB | median within 0.6–2.9 dB (INT8), 0.02 dB (FP8) |
-| 2 | head-input SQNR with unit propagation factors (no quantized model) | SQNR_add = −10 log₁₀ Σ ρₙ² | ranks the INT8 loss with ρ = 0.8: screening |
-| 3 | one measurement of the quantized head input → propagation factor | Γ̄ = 10^((SQNR_add − SQNR_h)/10) | ranks the INT8 loss exactly (ρ = 1.0); loss ×10 per 12 dB, leave-one-out within ×1.3–2.2 |
-| 4 | plateau over depth; effect of a signal change after calibration | SQNR∞ = −20 log₁₀ ρ + 10 log₁₀(1 − g²); ΔSQNR = 20 log₁₀ c / 0 | within 0.3 dB; full shift underestimated by 2.9–4.5 dB |
-| 5 | format and layers | the lowest precision within the accepted loss; FP16 layers by Γₙ→ₕ ρₙ² | measured ranking needed for single layers |
-
-How to read the numbers: an SQNR of 40, 20 and 0 dB is a relative error of 1 %, 10 % and 100 %;
-6 dB is a factor of two. Example: Faster R-CNN (Γ̄ = 0.13, head-input SQNR 21.5 dB) loses 0.7 % in
-INT8; EfficientNet-B0 injects no more noise than YOLOv10-X but amplifies it (Γ̄ = 2.89) and loses
-62 %, whereas FP8 keeps every network within 1 % of FP32. The calibration rests on five networks.
+`scripts/43_static_analysis.py` reads only the weights and the batch-normalisation buffers of an FP32 PyTorch
+model and reports in 20–35 s on a CPU how much noise each number format injects (Section 2.13 of the article):
 
 ```bash
-python scripts/26_quantizer_snr.py                                       # quantizer table (FP32 + scales only)
-python scripts/42_predict_int8.py --model yolov10x                       # step 2: screening
-python scripts/42_predict_int8.py --model yolov10x --head-sqnr 4.25      # step 3: after one measurement
-python scripts/42_predict_int8.py --model yolov10x --head-sqnr 4.25 --leave-out   # without this model in the fit
-```
-
-Without arguments for `--tables`, the script uses `results/tables` if present and otherwise the
-reference tables, so it runs on a fresh clone. Tables C7–C9 and Fig. C3 of the article contain the
-formulas, the worked example and the predictions for all five networks.
-
-## Static analysis of any model: no images, no execution (Sections 2.13 and 3.9)
-
-`scripts/43_static_analysis.py` reads only the weights and the batch-normalisation buffers of an FP32
-PyTorch model and reports, in 20–35 s on a CPU, how much noise each number format injects:
-
-```bash
-python scripts/43_static_analysis.py --model all                  # the five networks of the article
+pip install torch torchvision pandas pyyaml        # CPU is enough; ultralytics only for YOLOv10
 python scripts/43_static_analysis.py --torchvision resnet50       # any torchvision classification model
 python scripts/43_static_analysis.py --module my_model.pt         # any model saved with torch.save(model, path)
+python scripts/43_static_analysis.py --model all                  # the five networks of the article
 ```
 
-What it computes: exact INT8 (per channel, per tensor) and FP8 SQNR of every weight tensor; for every
-batch-normalised tensor a Gaussian model per channel, N(β, γ²v/(v+ε)), passed through the following
-activation, with the channel imbalance, the MSE-optimal range κ and the injected INT8/FP8 SQNR (Lemma 1);
-the network-level SQNR_add for INT8 with per-channel or per-tensor weights, FP8 and FP16; the gain of
-non-foldable batch normalisations (Eq. A3); structural flags; and where the network falls among the five
-measured networks of the article. Output: a report on the screen, `results/tables/static_analysis.csv` and
-per-layer tables in `results/tables/static/`.
+Example output (ResNet-50, a network not used elsewhere in the article):
 
-How network properties enter (Table C12 of the article): SQNR_add = −10 log₁₀ N − 10 log₁₀⟨ρ²⟩, i.e. −3 dB per
-doubling of the number of quantized tensors; the mean is dominated by the weakest tensors (outlier channels,
-depthwise inputs, gates, attention), −20 dB per decade of κ; width matters only through channel imbalance;
-parameter count and spatial size do not matter.
+```text
+=== resnet50: 25.5 M parameters, 54 conv/linear layers (0 depthwise)
+  weights      INT8 per channel: median 37.4 dB (worst 25.7); per tensor: median 26.1 dB (worst 19.7); FP8: 31.9 dB
+  activations  53 BN-modelled quantizers; channel spread median 2.6x (max 21x); MSE-optimal kappa median 7.4
+               INT8 injected SQNR median 38.0 dB (worst 30.4); FP8 31.5 dB
+  screening    static SQNR_add: INT8 19.0 dB, FP8 14.3 dB (unit propagation factors, no data)
+  structure    0 sigmoid-type activations (SiLU / gates), 0 attention blocks
+  weakest      layer3.1.bn3 (identity): INT8 30.4 dB, spread 4x, kappa 11.9
+  weakest      layer1.1.bn3 (identity): INT8 30.8 dB, spread 11x, kappa 12.1
+  weakest      layer2.1.bn3 (identity): INT8 32.4 dB, spread 6x, kappa 9.5
+  flags        strong channel imbalance (up to 21x) under one per-tensor scale
+  scenarios    static SQNR_add with weights (higher = less noise at the head input):
+                 INT8, per-channel weights      15.8 dB
+                 INT8, per-tensor weights        7.4 dB
+                 FP8 E4M3                       11.5 dB
+                 FP16                           53.4 dB
+  references   static INT8 SQNR_add of this network: 19.0 dB. Measured networks of the article (static SQNR_add, measured relative INT8 loss with TensorRT):
+                     frcnn_r50_fpn             20.6 dB     0.7%
+                 --> resnet50                  19.0 dB
+                     yolov10s                  18.0 dB     4.9%
+                     densenet121               17.1 dB     7.5%
+                     efficientnet_b0           16.2 dB    62.3%
+                     yolov10x                  14.9 dB    11.5%
+               The static analysis ranks networks (Spearman 0.9 on the five) but does not see how a network propagates the noise;
+               it gives no accuracy number. For the relative loss: one measurement of the quantized head input
+               (42_predict_int8.py, within about x2) or a direct check (44_validate_static.py).
+```
 
-**Validation.** `scripts/44_validate_static.py --torchvision <name> --images <folder>` executes a model on a
-labelled image folder (ImageNet class-index sub-folders, e.g. ImageNetV2) with simulated quantization at the
-modelled tensors, only to check the static prediction. Results on two networks not used elsewhere in the
-article and on the two classifiers of the article (ImageNetV2, 128 calibration and 2 000 evaluation images):
+How it works: weights are quantized exactly (INT8 per channel and per tensor, FP8 E4M3); every
+batch-normalised tensor is modelled per channel as N(β, γ²v/(v+ε)) passed through its activation, the range is
+set by minimising the quantization error (Eq. 5), and Lemma 1 gives the injected SQNR; the network value is
+SQNR_add = −10 log₁₀ N − 10 log₁₀⟨ρ²⟩ (−3 dB per doubling of the number N of quantized tensors, dominated by the
+weakest tensors). Width matters only through channel imbalance; parameter count and spatial size do not
+(Table C12 of the article).
+
+### Results for different quantization schemes
+
+Static SQNR_add of the whole network (activations and weights; higher is better) and the measured relative
+accuracy loss:
+
+| Network | INT8, per-channel weights | INT8, per-tensor weights | FP8 | FP16 | measured INT8 loss | measured FP8 loss |
+|---|---|---|---|---|---|---|
+| Faster R-CNN R50-FPN | 17.3 dB | 9.0 dB | 11.1 dB | 53.1 dB | 0.7 % (TensorRT) | 1.0 % (TensorRT) |
+| YOLOv10-S | 14.6 dB | 8.4 dB | 8.7 dB | 50.4 dB | 4.9 % (TensorRT) | 0.9 % (TensorRT) |
+| YOLOv10-X | 11.7 dB | 5.0 dB | 6.3 dB | 47.8 dB | 11.5 % (TensorRT) | 0.3 % (TensorRT) |
+| EfficientNet-B0 | 15.2 dB | 10.0 dB | 11.1 dB | 52.5 dB | 62.3 % (TensorRT) | 0.6 % (TensorRT) |
+| DenseNet-121 | 14.2 dB | 10.0 dB | 7.8 dB | 49.8 dB | 7.5 % (TensorRT) | 0.5 % (TensorRT) |
+| MobileNetV2 *(new)* | 20.3 dB | 14.4 dB | 12.0 dB | 53.4 dB | 0.2 % (simulated) | 10.3 % (simulated) |
+| ResNet-50 *(new)* | 15.8 dB | 7.4 dB | 11.5 dB | 53.4 dB | 1.1 % (simulated) | 2.8 % (simulated) |
+
+Per-tensor weight scales cost 4–8.5 dB against per-channel scales in every network, so weights must be quantized
+per channel. FP16 adds no relevant noise. The measured losses show what the static numbers cannot: how the
+network propagates the noise (compare MobileNetV2, which loses 10 % in FP8 although its injected FP8 noise is
+within 0.5 dB of that of ResNet-50).
+
+### How far it can be trusted (validation, Section 3.9)
+
+`scripts/44_validate_static.py --torchvision <name> --images <folder>` executes a model on a labelled image
+folder (ImageNet class-index sub-folders, e.g. ImageNetV2) with simulated quantization at exactly the modelled
+tensors. It is only a check of the static analysis. ImageNetV2, 128 calibration and 2 000 evaluation images:
 
 | Network | FP8 noise: static − measured | INT8 noise: static − measured (median, MAE) | INT8 loss measured [95 % CI] / predicted* | FP8 loss measured [95 % CI] / predicted* |
 |---|---|---|---|---|
@@ -103,20 +131,63 @@ article and on the two classifiers of the article (ImageNetV2, 128 calibration a
 | EfficientNet-B0 | 0.11 dB | +4.0 dB, 5.0 dB | 36.8 % [33.9, 39.6] / 29.7 % | 7.1 % [5.0, 9.0] / 8.6 % |
 | DenseNet-121 | 0.04 dB | +6.2 dB, 6.1 dB | 2.5 % [0.8, 4.1] / 2.5 % | 0.6 % [−0.9, 1.9] / 1.5 % |
 
-\* predicted from one measurement of the quantized head input (Section 3.8), not from the static analysis.
+\* predicted from one measurement of the quantized head input (next section), not from the static analysis.
 
-**What it is good for, and how far it can be trusted**
+| Question | Answer of the static analysis | Reliability |
+|---|---|---|
+| Per-channel or per-tensor weight scales? | network SQNR for both | exact (no model involved) |
+| How much noise does FP8 inject? | per quantizer and for the network | within 0.02–0.14 dB per quantizer and 0.05 dB for the network on four networks: floating-point noise does not depend on the distribution (Lemma 1) |
+| How much noise does INT8 inject? | per quantizer and for the network | within ~1 dB for bounded or unrectified activations (MobileNetV2); 4–6 dB too optimistic for SiLU and unbounded ReLU outputs (error amplitude underestimated ~2×); 8–12 dB more optimistic than the entropy calibration of TensorRT |
+| Which batch normalisations amplify noise? | closed-form gain (Eq. A3) | ranks the measured amplification with ρ = 0.83 (DenseNet-121) |
+| How does the network rank? | position among the five measured networks | orders their INT8 loss with ρ = 0.9 (one exchange) |
+| Accuracy loss in %? | **none** | the propagation of the noise is not visible in the parameters; use one measurement (below) |
 
-| Question | Reliability |
-|---|---|
-| Per-channel or per-tensor weight scales? | exact (no model involved); e.g. ResNet-50: 15.8 dB vs 7.4 dB at the network level |
-| How much noise does FP8 inject? | within 0.02–0.14 dB per quantizer and 0.05 dB for the whole network on all four checked networks: floating-point noise does not depend on the distribution (Lemma 1) |
-| How much noise does INT8 inject? | within about 1 dB for bounded or unrectified activations (MobileNetV2); 4–6 dB too optimistic for SiLU and unbounded ReLU outputs (error amplitude underestimated by a factor of about 2); 8–12 dB more optimistic than the entropy calibration of the TensorRT toolchain |
-| Which batch normalisations amplify noise, which structures are suspicious? | BN gain ranks the measured amplification with ρ = 0.83 (DenseNet-121) |
-| How does a network rank? | static SQNR_add orders the INT8 loss of the five article networks with ρ = 0.9 (one exchange) |
-| Accuracy loss in %? | **not from the static analysis**, because the propagation of the noise is not visible in the parameters (the same ~11 dB of FP8 noise ends at 6.8 dB on the head of MobileNetV2 and 17.0 dB on DenseNet-121). One measurement of the head input on ~100 images predicts it within a factor of 1.4 wherever the loss exceeds 1 % (`42_predict_int8.py`, `44_validate_static.py`) |
+## Main result: predicting INT8 tolerance (Section 3.8)
 
-## Setup
+The quantization error splits into the noise each quantizer injects, which FP32 statistics predict, and its
+propagation to the task head, which one measurement of the quantized network reveals:
+
+| Step | What is computed | Formula (INT8 / FP8) | Accuracy on the five networks |
+|---|---|---|---|
+| 1 | noise of each quantizer (FP32 activations and calibrated scales) | SQNR ≈ 52.9 dB − 20 log₁₀ κ / 31.5 dB | median within 0.6–2.9 dB (INT8), 0.02 dB (FP8) |
+| 2 | head-input SQNR with unit propagation factors (no quantized model) | SQNR_add = −10 log₁₀ Σ ρₙ² | ranks the INT8 loss with ρ = 0.8: screening |
+| 3 | one measurement of the quantized head input → propagation factor | Γ̄ = 10^((SQNR_add − SQNR_h)/10) | ranks the INT8 loss exactly (ρ = 1.0); loss ×10 per 12.2 dB |
+| 4 | plateau over depth; effect of a signal change after calibration | SQNR∞ = −20 log₁₀ ρ + 10 log₁₀(1 − g²); ΔSQNR = 20 log₁₀ c / 0 | within 0.3 dB; full shift underestimated by 2.9–4.5 dB |
+| 5 | format and layers | INT8 if the predicted loss is acceptable; FP16 layers by Γₙ→ₕ ρₙ² | measured ranking needed for single layers |
+
+| Network | SQNR_add, FP32 only (dB) | SQNR_h measured (dB) | Γ̄ | INT8 loss measured | predicted (leave-one-out) |
+|---|---|---|---|---|---|
+| Faster R-CNN R50-FPN | 12.5 | 21.5 | 0.13 | 0.7 % | 0.5 % |
+| YOLOv10-S | 6.0 | 11.6 | 0.28 | 4.9 % | 3.8 % |
+| YOLOv10-X | 2.6 | 4.3 | 0.69 | 11.5 % | 18.1 % |
+| EfficientNet-B0 | 3.7 | -0.9 | 2.89 | 62.3 % | 28.7 % |
+| DenseNet-121 | 6.1 | 6.6 | 0.90 | 7.5 % | 11.2 % |
+
+The relation between head-input SQNR and loss is empirical (least-squares fit on log₁₀ of the loss, five
+networks): the loss grows as r_h^1.64 (95 % CI 1.05–2.23), between a threshold-flip regime (exponent 1) and a
+smooth-loss regime (exponent 2). Formulas, their mathematical status (proved, definition or empirical) and the
+worked examples are in Tables C7–C9 and Fig. C3 of the article.
+
+```bash
+python scripts/42_predict_int8.py --model efficientnet_b0 --head-sqnr -0.95 --leave-out
+```
+
+```text
+efficientnet_b0: 114 activation quantizers upstream of the head
+  step 1  INT8 noise per quantizer: median 35.0 dB (Lemma 1), exact 32.5 dB; median kappa 7.8; 14 quantizers clip more than 0.1% of the values
+          FP8 noise per quantizer: 31.5 dB (Lemma 1), exact median 31.5 dB
+  step 2  SQNR_add (FP32 statistics only): INT8 3.7 dB, FP8 14.6 dB
+          screening (4 calibration networks, x10 per 7.8 dB): INT8 relative loss ~10.5% (factor of up to ~6)
+  step 3  measured SQNR_h -0.9 dB -> Gamma_bar 2.89 (the network amplifies the injected noise)
+          predicted INT8 relative loss (4 calibration networks, x10 per 14.1 dB): 28.7% (within a factor of about two)
+  step 5  acceptable loss 1% -> FP8 injects less noise (SQNR_add above); its accuracy depends on the propagation as well, so check it with one FP8 measurement - or INT8 with selective precision (10_selective.py)
+```
+
+The script reads the quantizer table of `26_quantizer_snr.py` (FP32 activations and calibrated scales, no
+quantized model) and uses `results/tables` if present, otherwise the reference tables, so it runs on a fresh
+clone.
+
+## Setup (full pipeline)
 
 ```bash
 conda create -n pepai python=3.12
@@ -178,6 +249,8 @@ randomness is seeded from it.
 | Comparison of a new run with the reference results | `40_compare_results.py` | report (exit status 1 on accuracy deviations) |
 | TopK / DFL placement ablation of the YOLOv10 head | `41_topk_ablation.py` | `tables/ablation_topk.csv` |
 | INT8 tolerance of a (new) network from its quantizer table and, optionally, one head-input measurement (Section 3.8) | `42_predict_int8.py` | `tables/predict_<model>.csv` |
+| Static analysis of any FP32 model: no images, no execution (Section 2.13) | `43_static_analysis.py` | `tables/static_analysis.csv`, `tables/static/` |
+| Validation of the static analysis with simulated quantization on an image folder (Section 3.9) | `44_validate_static.py` | `tables/static_validation.csv` |
 
 ## Reproducing the results
 

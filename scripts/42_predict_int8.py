@@ -15,7 +15,7 @@ Steps (Table tab:formulas):
   2  SQNR_add = -10 log10 sum_n rho_n^2 over the quantizers upstream of the head (unit propagation factors)
   3  with a measured SQNR_h: Gamma_bar = 10^((SQNR_add - SQNR_h) / 10)
   4  relative loss = 10^(a + b * SQNR) from the log-linear calibration (SQNR_add or SQNR_h)
-  5  recommendation: the lowest precision whose predicted relative loss is at most --max-loss
+  5  recommendation: INT8 if its predicted relative loss is at most --max-loss, otherwise FP8 or FP16
 """
 import argparse
 
@@ -86,9 +86,6 @@ def main():
           + (f", FP8 {out['sqnr_add_fp8_db']:.1f} dB" if "sqnr_add_fp8_db" in out else ""))
     print(f"          screening ({n} calibration networks, x10 per {-1 / b:.1f} dB): INT8 relative loss "
           f"~{out['rel_loss_int8_screening_pct']:.1f}% (factor of up to ~6)")
-    if "sqnr_add_fp8_db" in out:
-        out["rel_loss_fp8_screening_pct"] = 100 * 10 ** (a + b * out["sqnr_add_fp8_db"])
-        print(f"          FP8 on the same scale: ~{out['rel_loss_fp8_screening_pct']:.1f}% (INT8 calibration, indicative)")
 
     best = out["rel_loss_int8_screening_pct"]
     if args.head_sqnr is not None:
@@ -105,8 +102,9 @@ def main():
 
     if best <= args.max_loss:
         rec = "INT8"
-    elif out.get("rel_loss_fp8_screening_pct", np.inf) <= args.max_loss:
-        rec = "FP8 (or INT8 with selective precision, 10_selective.py)"
+    elif "sqnr_add_fp8_db" in out and out["sqnr_add_fp8_db"] > out["sqnr_add_db"] + 3:
+        rec = ("FP8 injects less noise (SQNR_add above); its accuracy depends on the propagation as well, so check it "
+               "with one FP8 measurement - or INT8 with selective precision (10_selective.py)")
     else:
         rec = "FP16, or INT8/FP8 with selective precision after measuring the layer sensitivities"
     out["recommendation"] = rec
