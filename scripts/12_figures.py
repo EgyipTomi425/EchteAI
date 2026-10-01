@@ -474,7 +474,7 @@ def fig_risk(cfg, out):
     if not models:
         return
     fig, axes = plt.subplots(1, 2, figsize=(9.0, 3.5))
-    rows = []
+    rows, thresholds = [], []
     for m in models:
         df = pd.read_csv(d / f"{m}_int8fp32.csv")
         for target in ("error", "error_tol"):
@@ -490,8 +490,7 @@ def fig_risk(cfg, out):
                     boots.append(roc_auc_score(y[idx], df.mre_proj.values[idx]))
             lo, hi = np.percentile(boots, [2.5, 97.5])
             rows.append({"model": m, "level": "image", "target": target, "predictor": "head MRE_proj",
-                         "auc": auc, "auc_lo": lo, "auc_hi": hi, "rate": y.mean(),
-                         "share_mre_ge_6pct": (df.mre_proj >= 0.06).mean()})
+                         "auc": auc, "auc_lo": lo, "auc_hi": hi, "rate": y.mean()})
             rows.append({"model": m, "level": "image", "target": target, "predictor": "n FP32 detections",
                          "auc": roc_auc_score(y, df.n_fp32), "rate": y.mean()})
         det_p = d / f"{m}_int8fp32_detections.csv"
@@ -513,20 +512,28 @@ def fig_risk(cfg, out):
                          markersize=4, linewidth=1.5, label=MODEL_LABELS[m])
             axes[1].annotate(MODEL_LABELS[m], (g.x.iloc[-1] * 100, g.y.iloc[-1] * 100), textcoords="offset points",
                              xytext=(-4, 6), ha="right", fontsize=7, color=INK_2)
+            # Architecture-specific threshold of the local deviation: the cut that maximises Youden's J
+            # (TPR - FPR) for genuinely vanishing detections.
+            x, y = det.local_mre.values, det.flip_tol.values
+            fpr_t, tpr_t, thr_t = roc_curve(y, x)
+            j = int(np.argmax(tpr_t - fpr_t))
+            above = x >= thr_t[j]
+            thresholds.append({"model": m, "threshold_local_mre": thr_t[j], "tpr": tpr_t[j], "fpr": fpr_t[j],
+                               "share_above": above.mean(), "vanish_rate_above": y[above].mean(),
+                               "vanish_rate_below": y[~above].mean(), "vanish_rate": y.mean(), "n": len(det)})
+            axes[1].axvline(thr_t[j] * 100, color=MODEL_COLORS[m], linewidth=0.8, linestyle="--", alpha=0.7)
     axes[0].plot([0, 1], [0, 1], color=MUTED, linewidth=0.8, linestyle=":")
     axes[0].set_xlabel("false positive rate")
     axes[0].set_ylabel("true positive rate")
     axes[0].set_title("a  vanishing detections vs local deviation", loc="left")
     axes[0].legend(fontsize=7, loc="lower right")
-    axes[1].axvline(6, color=MUTED, linewidth=0.8, linestyle="--")
-    axes[1].annotate("6% (conference paper)", (6, axes[1].get_ylim()[1]), textcoords="offset points", xytext=(3, -10),
-                     fontsize=7, color=INK_2)
     axes[1].set_xscale("log")
     axes[1].xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:g}"))
     axes[1].set_xlabel("local head-input MRE$_{proj}$ (%), decile medians")
     axes[1].set_ylabel("detections vanishing under INT8 (%)")
     axes[1].set_title("b  vanishing rate per deviation decile", loc="left")
     pd.DataFrame(rows).to_csv(results_dir(cfg, "tables") / "risk_auc.csv", index=False)
+    pd.DataFrame(thresholds).to_csv(results_dir(cfg, "tables") / "risk_thresholds.csv", index=False)
     save(fig, out / "R_risk")
 
 

@@ -14,5 +14,5 @@ EfficientNet-B0 & 25.9 [20.9, 34.8] & 81.4 [72.5, 91.1] & -0.9 [-1.8, -0.2] & 48
 DenseNet-121 & 13.4 [10.8, 16.9] & 20.9 [14.9, 28.1] & 6.6 [5.0, 7.9] & 32.4 [26.9, 38.3] & 5.3 & 45.2 \\
 \botrule
 \end{tabular}
-\footnotetext{Head input: tensors consumed by the task head. Median over images, interquartile range in brackets. All convolutions: per image, the median element-wise relative error over every convolution output, comparable to the cumulative error of the conference paper (9--20\%). Worst SQNR: lowest per-layer median. INT8 with FP32 fallback, so the deviation is caused by quantization alone; the FP16 column gives the numerical floor of the comparison.}
+\footnotetext{Head input: tensors consumed by the task head. Median over images, interquartile range in brackets. All convolutions: per image, the median element-wise relative error over every convolution output. Worst SQNR: lowest per-layer median. INT8 with FP32 fallback, so the deviation is caused by quantization alone; the FP16 column gives the numerical floor of the comparison.}
 \end{sidewaystable}

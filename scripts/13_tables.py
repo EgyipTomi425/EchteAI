@@ -189,8 +189,8 @@ def table_layer_stats(cfg, out, quant="int8fp32"):
         write(out / "R2_layer_stats.tex", body, "lrrrrrr",
               "Activation-level deviation of INT8 from strict FP32 (500 images per model)", "tab:layerstats",
               "Head input: tensors consumed by the task head. Median over images, interquartile range in brackets. "
-              "All convolutions: per image, the median element-wise relative error over every convolution output, "
-              "comparable to the cumulative error of the conference paper (9--20\\%). Worst SQNR: lowest per-layer "
+              "All convolutions: per image, the median element-wise relative error over every convolution output. "
+              "Worst SQNR: lowest per-layer "
               "median. INT8 with FP32 fallback, so the deviation is caused by quantization alone; the FP16 column "
               "gives the numerical floor of the comparison.")
 
