@@ -333,12 +333,40 @@ def scenarios(s, layers, acts):
     return rows, refs
 
 
+def propagation_range():
+    """Range of the effective propagation factor Gamma_bar measured so far, per format: the five TensorRT networks of
+    the article (INT8) and the simulated check of 44_validate_static.py (INT8 and FP8)."""
+    from pepai.config import CODE_ROOT
+    ref = CODE_ROOT / "reference_results" / "tables"
+    g = {"int8": [], "fp8": []}
+    if (ref / "prediction.csv").exists():
+        g["int8"] += list(pd.read_csv(ref / "prediction.csv")["gamma_bar"])
+    if (ref / "static_validation.csv").exists():
+        v = pd.read_csv(ref / "static_validation.csv")
+        g["int8"] += list(v["int8_gamma_bar"])
+        g["fp8"] += list(v["fp8_gamma_bar"])
+    return {k: (min(x), max(x)) for k, x in g.items() if x}
+
+
 def report_scenarios(s, layers, acts):
     rows, refs = scenarios(s, layers, acts)
     print("  scenarios    activations and weights together, with unit propagation factors: the expected deviation at")
     print("               the head input if the network neither attenuates nor amplifies the noise (not the accuracy loss):")
     for label, v in rows:
         print(f"                 {label:28s} {v:6.1f} dB   ({100 * 10 ** (-v / 20):4.1f} % of the signal)")
+    gammas = propagation_range()
+    if gammas:
+        print("  head input   expected deviation at the head input for the propagation factors measured so far")
+        print("               (SQNR_h = SQNR_add - 10 log10 Gamma_bar; best case: strongest attenuation, worst case: strongest")
+        print("               amplification; the network itself is somewhere in between, one measurement tells where):")
+        for label, v in rows:
+            fmt = "int8" if label.startswith("INT8") else "fp8" if label.startswith("FP8") else None
+            if fmt is None or fmt not in gammas:
+                continue
+            g_lo, g_hi = gammas[fmt]
+            best, worst = v - 10 * np.log10(g_lo), v - 10 * np.log10(g_hi)
+            print(f"                 {label:28s} {100 * 10 ** (-best / 20):4.1f} - {min(100.0, 100 * 10 ** (-worst / 20)):5.1f} % "
+                  f"of the signal (Gamma_bar {g_lo:.2f}-{g_hi:.2f})")
     if refs:
         v = s["static_sqnr_add_int8_db"]
         print(f"  references   static INT8 SQNR_add of this network: {v:.1f} dB. Measured networks of the article "

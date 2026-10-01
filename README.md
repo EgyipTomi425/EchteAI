@@ -105,6 +105,12 @@ Example output (ResNet-50, a network not used elsewhere in the article):
                  INT8, per-tensor weights        7.4 dB   (42.5 % of the signal)
                  FP8 E4M3                       11.5 dB   (26.7 % of the signal)
                  FP16                           53.4 dB   ( 0.2 % of the signal)
+  head input   expected deviation at the head input for the propagation factors measured so far
+               (SQNR_h = SQNR_add - 10 log10 Gamma_bar; best case: strongest attenuation, worst case: strongest
+               amplification; the network itself is somewhere in between, one measurement tells where):
+                 INT8, per-channel weights     5.8 -  42.4 % of the signal (Gamma_bar 0.13-6.86)
+                 INT8, per-tensor weights     15.2 - 100.0 % of the signal (Gamma_bar 0.13-6.86)
+                 FP8 E4M3                      9.3 -  48.4 % of the signal (Gamma_bar 0.12-3.28)
   references   static INT8 SQNR_add of this network: 19.0 dB. Measured networks of the article (static SQNR_add, measured relative INT8 loss with TensorRT):
                      frcnn_r50_fpn             20.6 dB     0.7%
                  --> resnet50                  19.0 dB
