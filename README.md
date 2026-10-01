@@ -14,7 +14,7 @@ whose code is kept under the tag [`citds-2026`](https://github.com/EgyipTomi425/
 
 ## Results in brief
 
-Measured on an NVIDIA H200 with TensorRT 11.3 (COCO val2017 box mAP, ImageNetV2 top-1; Table 6 of the article):
+Measured on an NVIDIA H200 with TensorRT 11.3 (COCO val2017 box mAP, ImageNetV2 top-1; Table 5 of the article):
 
 | Network | Metric | FP32 | FP16 | INT8 | FP8 |
 |---|---|---|---|---|---|
@@ -96,7 +96,7 @@ batch-normalised tensor is modelled per channel as N(β, γ²v/(v+ε)) passed th
 set by minimising the quantization error (Eq. 5), and Lemma 1 gives the injected SQNR; the network value is
 SQNR_add = −10 log₁₀ N − 10 log₁₀⟨ρ²⟩ (−3 dB per doubling of the number N of quantized tensors, dominated by the
 weakest tensors). Width matters only through channel imbalance; parameter count and spatial size do not
-(Table C12 of the article).
+(Table C13 of the article).
 
 ### Results for different quantization schemes
 
@@ -166,7 +166,8 @@ propagation to the task head, which one measurement of the quantized network rev
 The relation between head-input SQNR and loss is empirical (least-squares fit on log₁₀ of the loss, five
 networks): the loss grows as r_h^1.64 (95 % CI 1.05–2.23), between a threshold-flip regime (exponent 1) and a
 smooth-loss regime (exponent 2). Formulas, their mathematical status (proved, definition or empirical) and the
-worked examples are in Tables C7–C9 and Fig. C3 of the article.
+worked examples are in Tables C8–C10 and Fig. C3 of the article. Statistics: exact one-sided
+Spearman permutation tests (n = 5), t-based confidence intervals of the slope, leave-one-out prediction (Section 2.12).
 
 ```bash
 python scripts/42_predict_int8.py --model efficientnet_b0 --head-sqnr -0.95 --leave-out
@@ -186,6 +187,40 @@ efficientnet_b0: 114 activation quantizers upstream of the head
 The script reads the quantizer table of `26_quantizer_snr.py` (FP32 activations and calibrated scales, no
 quantized model) and uses `results/tables` if present, otherwise the reference tables, so it runs on a fresh
 clone.
+
+## Repairing a fragile network (Sections 3.2 and 3.6)
+
+EfficientNet-B0 collapses in INT8 (65.8 % → 24.8 % top-1, ImageNetV2). What helps, measured on the H200
+(latency and energy at batch size 8 from the shorter protocol of the selective-precision search, Table C14):
+
+| Remedy | Top-1 | Latency (ms) | Energy (mJ/img) |
+|---|---|---|---|
+| INT8, toolchain default | 24.8 % | 0.48 | 13.8 |
+| first depthwise convolution in FP16 (PEP-AI rank 1) | 43.9 % | 0.55 | 16.0 |
+| 8 convolutions in FP16, iterative PEP-AI ranking | 62.3 % | 0.72 | 23.3 |
+| 20 convolutions in FP16, iterative PEP-AI ranking | 66.0 % | 0.86 | 27.9 |
+| all 16 depthwise convolutions in FP16 (literature heuristic) | 65.0 % | 0.95 | 31.0 |
+| 20 random convolutions in FP16 (3 seeds) | 34.5–45.7 % | 0.76 | 23.7 |
+| quantize only convolution inputs (Wu et al.), order-independent calibration | 54.9 % | – | – |
+| calibration subset that starts with another image | 41.7 % | – | – |
+| FP8 instead of INT8 | 65.4 % | – | – |
+
+The damage sits in a few layers that amplify the noise (Γ̄ = 2.89); the measured ranking finds them, a ranking
+from FP32 statistics alone does not (34.9 % with 20 layers). On the H200, every repaired variant above 54 % is
+slower than plain FP16, so FP16 or FP8 is the better choice for this network. Other networks: DenseNet-121
+recovers 57.4 → 61.6 % with its pre-activation batch normalisation in FP16, YOLOv10-X 47.8 → 52.4 mAP with a
+class-wise NMS (its INT8 head loses the implicit duplicate suppression), and Faster R-CNN needs nothing.
+Cross-layer equalisation and weight-adapting PTQ (AdaRound, BRECQ) were not evaluated.
+
+## Limitations
+
+* The loss law (×10 per 12 dB) is fitted on five networks and two metrics; the out-of-sample check covers four
+  classifiers in simulated quantization only.
+* The static analysis models batch-normalised tensors as Gaussian channels: it misses residual sums, tensors
+  without BN and heavy activation tails, and it never sees the propagation factor.
+* All timings and energies are from a data-centre GPU (H200); relative effects carry over, absolute values must
+  be re-measured on embedded hardware. Adverse conditions are synthetic (COCO-C), and COCO is not a driving dataset.
+* TensorRT uses static symmetric per-tensor activation scales; per-channel or dynamic scales would behave differently.
 
 ## Setup (full pipeline)
 
