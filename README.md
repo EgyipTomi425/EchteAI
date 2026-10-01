@@ -132,7 +132,7 @@ set by minimising the quantization error (Eq. 5), and Lemma 1 gives the injected
 SQNR_add = −10 log₁₀ N − 10 log₁₀⟨ρ²⟩ (−3 dB per doubling of the number N of quantized tensors, dominated by the
 weakest tensors). Width matters only through channel imbalance; parameter count and spatial size do not.
 
-### How network properties change the error (Table C13 of the article)
+### How network properties change the error (Table C14 of the article)
 
 | Property | Effect on the head-input SQNR | Formula | Example |
 |---|---|---|---|
@@ -200,6 +200,20 @@ tensors. It is only a check of the static analysis. ImageNetV2, 128 calibration 
 
 \* predicted from one measurement of the quantized head input (next section), not from the static analysis.
 
+The same comparison as a relative error in percent of the signal, r = 10^(−SQNR/20), as in Table C13 of the article.
+Static values need no images. Measured deviations need unlabelled images, and only the accuracy loss needs labels:
+
+| Network | Format | Per quantizer, static / measured | Whole network, static / measured | Head input, measured | Relative loss, measured |
+|---|---|---|---|---|---|
+| MobileNetV2 | INT8 | 1.0 % / 1.0 % | 9.6 % / 11.0 % | 13.9 % | 0.2 % |
+| | FP8 | 2.6 % / 2.6 % | 25.0 % / 25.1 % | 45.5 % | 10.3 % |
+| ResNet-50 | INT8 | 1.4 % / 2.6 % | 16.2 % / 31.2 % | 14.3 % | 1.1 % |
+| | FP8 | 2.7 % / 2.7 % | 26.7 % / 26.7 % | 25.1 % | 2.8 % |
+| EfficientNet-B0 | INT8 | 2.2 % / 3.5 % | 17.4 % / 34.1 % | 89.3 % | 36.8 % |
+| | FP8 | 2.6 % / 2.7 % | 27.8 % / 27.9 % | 41.9 % | 7.1 % |
+| DenseNet-121 | INT8 | 1.2 % / 2.5 % | 19.7 % / 34.5 % | 19.6 % | 2.5 % |
+| | FP8 | 2.6 % / 2.6 % | 40.7 % / 40.7 % | 14.2 % | 0.6 % |
+
 **A network of your own.** The analysis does not depend on torchvision. `examples/custom_model/` defines a
 custom 1.2 M-parameter network with a SiLU stem, depthwise blocks with squeeze-and-excitation and Hardswish, ReLU
 residual bottlenecks, one convolution without BN and a GroupNorm layer. Its BN statistics come from 256 real
@@ -260,7 +274,7 @@ propagation to the task head, which one measurement of the quantized network rev
 The relation between head-input SQNR and loss is empirical (least-squares fit on log₁₀ of the loss, five
 networks): the loss grows as r_h^1.64 (95 % CI 1.05–2.23), between a threshold-flip regime (exponent 1) and a
 smooth-loss regime (exponent 2). Formulas, their mathematical status (proved, definition or empirical) and the
-worked examples are in Tables C8–C10 and Fig. C3 of the article. Statistics: exact one-sided
+worked examples are in Tables C8–C10 and Fig. C6 of the article. Statistics: exact one-sided
 Spearman permutation tests (n = 5), t-based confidence intervals of the slope, leave-one-out prediction (Section 2.12).
 
 ```bash
@@ -285,7 +299,7 @@ clone.
 ## Repairing a fragile network (Sections 3.2 and 3.6)
 
 EfficientNet-B0 collapses in INT8 (65.8 % → 24.8 % top-1, ImageNetV2). What helps, measured on the H200
-(latency and energy at batch size 8 from the shorter protocol of the selective-precision search, Table C14):
+(latency and energy at batch size 8 from the shorter protocol of the selective-precision search, Table C15):
 
 | Remedy | Top-1 | Latency (ms) | Energy (mJ/img) |
 |---|---|---|---|

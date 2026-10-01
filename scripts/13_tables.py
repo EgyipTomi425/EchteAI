@@ -25,7 +25,7 @@ HOROWITZ = [("8-bit integer add", 0.03), ("32-bit integer add", 0.1), ("16-bit f
 # Tables wider than the text block go on a landscape page (Springer template: sidewaystable) in a smaller font.
 WIDE = {"tab:accuracy", "tab:layerstats", "tab:aibo", "tab:engines", "tab:localization", "tab:propagation",
         "tab:placement", "tab:duplicates", "tab:calibmethods", "tab:deployment", "tab:modelcheck", "tab:formulas",
-        "tab:prediction", "tab:static", "tab:staticval"}
+        "tab:prediction", "tab:static", "tab:staticval", "tab:staticpct"}
 SMALL = {"tab:models", "tab:datasets"}
 COMPACT = {"tab:selective", "tab:operating", "tab:calibvar"}   # fit the text width with narrower column gaps
 
@@ -934,6 +934,37 @@ def table_static_validation(cfg, out):
           "$^\\dagger$ not used elsewhere in this article.")
 
 
+def table_static_percent(cfg, out):
+    """Extended data: the static and measured deviations of Table tab:staticval as relative errors in percent."""
+    t = results_dir(cfg, "tables")
+    if not (t / "static_validation.csv").exists():
+        return
+    v = pd.read_csv(t / "static_validation.csv")
+    order = [m for m in ["mobilenet_v2", "resnet50"] + ORDER if m in set(v.model)]
+    v = v.set_index("model").loc[order]
+    r = lambda db: f"{100 * 10 ** (-db / 20):.1f}"
+    body = [r"Model & Format & \multicolumn{2}{c}{Injected per quantizer (\%)} & "
+            r"\multicolumn{2}{c}{Injected, whole network (\%)} & Head input (\%) & Relative loss (\%) \\",
+            r"\cmidrule{3-4}\cmidrule{5-6}",
+            r" & & static & measured & static & measured & measured & measured \\", r"\midrule"]
+    for m in order:
+        x = v.loc[m]
+        name = MODEL_LABELS.get(m, STATIC_LABELS.get(m, m))
+        for f in ("int8", "fp8"):
+            static_q = x[f"{f}_injected_median_db"] + x[f"{f}_static_vs_measured_median_diff_db"]
+            body.append(f"{name if f == 'int8' else ''} & {f.upper()} & {r(static_q)} & {r(x[f'{f}_injected_median_db'])} & "
+                        f"{r(x[f'static_sqnr_add_{f}_db'])} & {r(x[f'{f}_sqnr_add_measured_db'])} & "
+                        f"{r(x[f'{f}_sqnr_head_db'])} & {100 * x[f'{f}_rel_loss']:.1f} \\\\")
+        body.append(r"\midrule")
+    write(out / "X_static_percent.tex", body[:-1], "llrrrrrr",
+          "Static and measured deviation as relative error", "tab:staticpct",
+          "Relative error $r=\\lVert e\\rVert/\\lVert f\\rVert=10^{-\\mathrm{SQNR}/20}$ in percent of the signal, from the "
+          "SQNR values of Table~\\ref{tab:staticval}. Injected per quantizer: median over the quantizers; whole network: "
+          "$\\mathrm{SQNR}_\\text{add}$ including the weights, with unit propagation factors; head input: measured at the "
+          "input of the last linear layer, i.e.\\ after propagation. Static values need no image; measured values need "
+          "unlabelled images, and only the relative loss needs labels. $^\\dagger$ not used elsewhere in this article.")
+
+
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="Write the LaTeX tables of the article from the result tables.")
@@ -956,6 +987,6 @@ if __name__ == "__main__":
               table_hardware, table_engines, table_localization, table_propagation, table_selective,
               table_calibration_variability, table_operating_point, table_duplicates,
               table_calibration_methods, table_deployment, table_prediction, table_formulas, table_model_check, table_static,
-              table_static_validation):
+              table_static_validation, table_static_percent):
         f(cfg, out)
         print("done:", f.__name__, flush=True)

@@ -555,7 +555,7 @@ The static analysis of Section~\ref{sec:static} takes 20--35\,s per network on a
 
 How accurate the static prediction is depends on the number format, as Lemma~\ref{lem:noise} leads one to expect. For FP8, the injected noise of every quantizer is predicted within 0.02--0.14\,dB on all four networks (1--2\% of the error amplitude), and the static $\mathrm{SQNR}_\text{add}$ equals the measured one within 0.05\,dB (12.0, 11.5, 11.1 and 7.8\,dB). The relative precision of a floating-point format does not depend on the distribution, so the Gaussian approximation simply does not matter here. For INT8, the prediction depends on the range and thus on the tails. It is accurate for MobileNetV2, whose quantized tensors are either bounded (ReLU6) or unrectified projections (median $+0.4$\,dB, mean absolute error 1.1\,dB, rank correlation 0.98 over its 52 tensors). For EfficientNet-B0, ResNet-50 and DenseNet-121, whose SiLU and unbounded ReLU outputs have heavier tails than the Gaussian model, it is 4--6\,dB too optimistic (mean absolute error 5.0--6.3\,dB, i.e.\ the error amplitude is underestimated by a factor of 1.8--2.1), and the ranking of single tensors is weak there (0.34--0.79). Even so, the static $\mathrm{SQNR}_\text{add}$ still orders the four networks by their simulated INT8 loss with one exchange.
 
-Neither format allows the accuracy to be predicted statically, because the propagation factor is not visible in the parameters. The same FP8 noise of about 11\,dB becomes 6.8\,dB at the head of MobileNetV2 ($\bar\Gamma=3.3$, loss 10.3\%) but 12.0\,dB at the head of ResNet-50 ($\bar\Gamma=0.9$, loss 2.8\%), and 7.8\,dB becomes 17.0\,dB at the head of DenseNet-121 ($\bar\Gamma=0.12$, loss 0.6\%). One measurement of the head input closes this gap. The relation of Section~\ref{sec:worked}, calibrated on the TensorRT engines of the five other networks, predicts the relative loss of the simulated engines within the 95\% bootstrap interval in six of the eight cases (ResNet-50: 1.5 against 1.1\% for INT8 and 3.7 against 2.8\% for FP8; DenseNet-121: 2.5 against 2.5\% and 1.5 against 0.6\%; EfficientNet-B0 FP8: 8.6 against 7.1\%; MobileNetV2 FP8: 9.8 against 10.3\%). The two misses are EfficientNet-B0 in INT8 (29.7 against 36.8\%, a factor of 1.24) and MobileNetV2 in INT8 (1.4 against 0.2\%, both below 2\%).
+Neither format allows the accuracy to be predicted statically, because the propagation factor is not visible in the parameters. The same FP8 noise of about 11\,dB becomes 6.8\,dB at the head of MobileNetV2 ($\bar\Gamma=3.3$, loss 10.3\%) but 12.0\,dB at the head of ResNet-50 ($\bar\Gamma=0.9$, loss 2.8\%), and 7.8\,dB becomes 17.0\,dB at the head of DenseNet-121 ($\bar\Gamma=0.12$, loss 0.6\%). One measurement of the head input closes this gap. The relation of Section~\ref{sec:worked}, calibrated on the TensorRT engines of the five other networks, predicts the relative loss of the simulated engines within the 95\% bootstrap interval in six of the eight cases (ResNet-50: 1.5 against 1.1\% for INT8 and 3.7 against 2.8\% for FP8; DenseNet-121: 2.5 against 2.5\% and 1.5 against 0.6\%; EfficientNet-B0 FP8: 8.6 against 7.1\%; MobileNetV2 FP8: 9.8 against 10.3\%). The two misses are EfficientNet-B0 in INT8 (29.7 against 36.8\%, a factor of 1.24) and MobileNetV2 in INT8 (1.4 against 0.2\%, both below 2\%). Table~\ref{tab:staticpct} gives the same quantities as relative errors in percent of the signal. For ResNet-50 in FP8, for example, the static analysis predicts an injected error of 2.7\% per quantizer and 26.7\% for the whole network, exactly as measured; after propagation the head input deviates by 25.1\%, and the top-1 accuracy drops by 2.8\% relative to FP32. In INT8 the static analysis predicts 1.4\% per quantizer and 16.2\% for the network, whereas 2.6\% and 31.2\% are measured; the network attenuates this to 14.3\% at the head input (relative loss 1.1\%). None of these deviations needs labels: only the accuracy loss does.
 
 The static analysis is therefore useful for decisions that do not depend on the propagation. It tells whether weights need per-channel scales (ResNet-50: 15.8 against 7.4\,dB with one scale per tensor), how much noise FP8 injects into a given network, which batch normalisations amplify noise, which structures (depthwise inputs, imbalanced channels, gates, attention) deserve suspicion, and how a network ranks among measured references. Its INT8 noise estimate is reliable to about 1\,dB for networks with bounded or unrectified activations and to about 5--6\,dB otherwise, and it does not give an accuracy number. With one measurement of the quantized head input, which needs only unlabelled images, the relative loss can be predicted within a factor of 1.4 wherever it exceeds 1\% (six of the eight cases), as long as the head-input SQNR lies within the range of the calibration networks ($-1$ to 22\,dB).
 
@@ -1131,6 +1131,33 @@ DenseNet-121 & INT8 & $+$6.2 & 6.1 & 0.36 & 14.1 & 9.2 & 14.2 & 0.32 & 59.5 & 2.
 \footnotetext{ImageNetV2, 128 calibration and 2000 evaluation images, CPU simulation (\texttt{44\_validate\_static.py}): symmetric per-tensor quantizers on every batch-normalised tensor (INT8: MSE-optimal range; FP8 E4M3: maximum), weights per output channel. Top-1 of FP32: MobileNetV2$^\dagger$ 59.2\%, ResNet-50$^\dagger$ 69.4\%, EfficientNet-B0 65.8\%, DenseNet-121 61.1\%. Quantizer SQNR: static prediction from the BN parameters against the exact injected SQNR on 64 evaluation images. SQNR$_\text{add}$ includes the weight quantizers. Relative loss: measured with a paired bootstrap interval, and predicted from the measured SQNR$_h$ with the calibration of Table~\ref{tab:prediction}. The simulated placement and calibration differ from the TensorRT toolchain, so the INT8 numbers of EfficientNet-B0 and DenseNet-121 differ from Table~\ref{tab:accuracy}. $^\dagger$ not used elsewhere in this article.}
 \end{sidewaystable}
 % END GENERATED X_static_validation
+
+% BEGIN GENERATED X_static_percent
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Static and measured deviation as relative error}\label{tab:staticpct}
+\begin{tabular}{@{}llrrrrrr@{}}
+\toprule
+Model & Format & \multicolumn{2}{c}{Injected per quantizer (\%)} & \multicolumn{2}{c}{Injected, whole network (\%)} & Head input (\%) & Relative loss (\%) \\
+\cmidrule{3-4}\cmidrule{5-6}
+ & & static & measured & static & measured & measured & measured \\
+\midrule
+MobileNetV2$^\dagger$ & INT8 & 1.0 & 1.0 & 9.6 & 11.0 & 13.9 & 0.2 \\
+ & FP8 & 2.6 & 2.6 & 25.0 & 25.1 & 45.5 & 10.3 \\
+\midrule
+ResNet-50$^\dagger$ & INT8 & 1.4 & 2.6 & 16.2 & 31.2 & 14.3 & 1.1 \\
+ & FP8 & 2.7 & 2.7 & 26.7 & 26.7 & 25.1 & 2.8 \\
+\midrule
+EfficientNet-B0 & INT8 & 2.2 & 3.5 & 17.4 & 34.1 & 89.3 & 36.8 \\
+ & FP8 & 2.6 & 2.7 & 27.8 & 27.9 & 41.9 & 7.1 \\
+\midrule
+DenseNet-121 & INT8 & 1.2 & 2.5 & 19.7 & 34.5 & 19.6 & 2.5 \\
+ & FP8 & 2.6 & 2.6 & 40.7 & 40.7 & 14.2 & 0.6 \\
+\botrule
+\end{tabular}
+\footnotetext{Relative error $r=\lVert e\rVert/\lVert f\rVert=10^{-\mathrm{SQNR}/20}$ in percent of the signal, from the SQNR values of Table~\ref{tab:staticval}. Injected per quantizer: median over the quantizers; whole network: $\mathrm{SQNR}_\text{add}$ including the weights, with unit propagation factors; head input: measured at the input of the last linear layer, i.e.\ after propagation. Static values need no image; measured values need unlabelled images, and only the relative loss needs labels. $^\dagger$ not used elsewhere in this article.}
+\end{sidewaystable}
+% END GENERATED X_static_percent
 
 \begin{table}[h]
 \footnotesize\setlength{\tabcolsep}{3pt}
