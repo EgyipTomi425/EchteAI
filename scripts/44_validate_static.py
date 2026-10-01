@@ -260,6 +260,7 @@ def main():
         layers, acts, bns, extra = static.analyse(fn().eval(), np.random.default_rng(cfg["seed"]))
         summary = static.summarise(args.torchvision, layers, acts, bns, extra)
         static.report(summary, layers, acts, bns)
+        static.report_scenarios(summary, layers, acts)
         print("\nno --images: static analysis only (nothing executed); pass an image folder to measure the error")
         return
     res, ps = run(fn, args.torchvision, args.images, args.n_calib, args.n_eval, cfg["seed"], not args.no_labels,

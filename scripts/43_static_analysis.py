@@ -240,6 +240,42 @@ def report(s, layers, acts, bns):
     print("  flags        " + ("; ".join(flags) if flags else "none"))
 
 
+def scenarios(s, layers, acts):
+    """Static SQNR_add (activations + weights) per deployment scenario and an order-of-magnitude INT8 loss estimate
+    calibrated on the five networks of the article (static SQNR_add of the activations vs measured TensorRT loss)."""
+    def add(*arrays):
+        return float(-10 * np.log10(sum(np.sum(10 ** (-np.asarray(a) / 10)) for a in arrays)))
+    rows = [("INT8, per-channel weights", add(acts.sqnr_int8_db, layers.w_int8_per_channel_db)),
+            ("INT8, per-tensor weights", add(acts.sqnr_int8_db, layers.w_int8_per_tensor_db)),
+            ("FP8 E4M3", add(acts.sqnr_fp8_db, layers.w_fp8_db)),
+            ("FP16", add(np.full(len(acts), 73.66), np.full(len(layers), 73.66)))]
+    est = None
+    from pepai.config import CODE_ROOT
+    ref = CODE_ROOT / "reference_results" / "tables"
+    if (ref / "prediction.csv").exists() and (ref / "static_analysis.csv").exists():
+        pred = pd.read_csv(ref / "prediction.csv").set_index("model")
+        st = pd.read_csv(ref / "static_analysis.csv").set_index("model")
+        both = [m for m in pred.index if m in st.index and m != s["model"]]
+        x, y = st.loc[both, "static_sqnr_add_int8_db"].values, np.log10(pred.loc[both, "int8_rel_loss"].values)
+        b, a = np.polyfit(x, y, 1)
+        est = 100 * 10 ** (a + b * s["static_sqnr_add_int8_db"])
+    return rows, est
+
+
+def report_scenarios(s, layers, acts):
+    rows, est = scenarios(s, layers, acts)
+    print("  scenarios    static SQNR_add with weights (higher = less noise at the head input):")
+    for label, v in rows:
+        print(f"                 {label:28s} {v:6.1f} dB")
+    if est is not None:
+        print(f"  INT8 loss    ~{est:.1f}% relative accuracy loss, order of magnitude only (per-tensor activation "
+              f"scales, per-channel weights; leave-one-out error up to x13 on the five article networks).")
+    print("               FP8: every network of the article stayed within 1% of FP32; FP16: lossless (<0.1%).")
+    print("               For a loss estimate within about x2: one measurement on ~100 images with "
+          "44_validate_static.py --images <folder>.")
+    return rows, est
+
+
 def load(name, cfg):
     from pepai import models
     if name in ("efficientnet_b0", "densenet121"):
@@ -275,6 +311,10 @@ def main():
         layers, acts, bns, extra = analyse(model, rng)
         s = summarise(name, layers, acts, bns, extra)
         report(s, layers, acts, bns)
+        sc, est = report_scenarios(s, layers, acts)
+        s.update({f"scenario_{lab.split(',')[0].split()[0].lower()}{'_pt' if 'per-tensor' in lab else ''}_db": v
+                  for lab, v in sc})
+        s["int8_loss_estimate_pct"] = est
         layers.to_csv(out / f"{name}_weights.csv", index=False)
         acts.to_csv(out / f"{name}_activations.csv", index=False)
         bns.to_csv(out / f"{name}_bn_gain.csv", index=False)
