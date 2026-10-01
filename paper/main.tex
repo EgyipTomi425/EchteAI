@@ -586,6 +586,15 @@ The analysis above reduces to a procedure that can be applied to a new network b
 
 In summary, the model is accurate where it describes single quantizers, the plateau of a chain and the immediate effect of a signal change (within 0.02--2.9\,dB), it screens networks for INT8 from FP32 statistics alone, and with one measurement of the quantized head input it predicts the relative INT8 loss within a factor of about two. It does not predict the propagation factors of individual layers or the full effect of a distribution shift, and its calibration rests on five networks with two accuracy metrics. The procedure is implemented in \texttt{scripts/42\_predict\_int8.py} of the code repository.
 
+\subsection{Static analysis and its validation on unseen networks}\label{sec:res-static}
+The static analysis of Section~\ref{sec:static} takes 20--35\,s per network on a CPU and needs no image (Table~\ref{tab:static}). On the five networks of this article its INT8 $\mathrm{SQNR}_\text{add}$ orders the measured relative INT8 loss with one exchange (Spearman $\rho=0.9$, exact one-sided $p=0.04$), as the FP32-statistics screening of Section~\ref{sec:worked} does, but its absolute values are 8--12.5\,dB higher than those obtained with the calibration of the toolchain (20.6 against 12.5\,dB for Faster R-CNN, 14.9 against 2.6\,dB for YOLOv10-X), because the toolchain quantizes more tensors, sets its ranges by entropy calibration and meets heavier tails than the Gaussian model. The same analysis was applied to two networks not used elsewhere in this article, MobileNetV2 and ResNet-50, and to the two classifiers of the article, and validated by executing them on ImageNetV2 with simulated quantization at exactly the modelled tensors (Table~\ref{tab:staticval}; 128 calibration and 2\,000 evaluation images; \texttt{44\_validate\_static.py}). The validation run is only a check; the analysis itself executes nothing.
+
+The accuracy of the static prediction depends on the number format, as Lemma~\ref{lem:noise} predicts. For FP8 the injected noise of every quantizer is predicted within 0.02--0.14\,dB on all four networks (1--2\% of the error amplitude), and the static $\mathrm{SQNR}_\text{add}$ equals the measured one within 0.05\,dB (12.0, 11.5, 11.1 and 7.8\,dB): the relative precision of a floating-point format does not depend on the distribution, so the Gaussian approximation does not matter. For INT8 the prediction depends on the range and thus on the tails: it is accurate for MobileNetV2, whose quantized tensors are bounded (ReLU6) or unrectified projections (median $+0.4$\,dB, mean absolute error 1.1\,dB, rank correlation 0.98 over its 52 tensors), but 4--6\,dB too optimistic for EfficientNet-B0, ResNet-50 and DenseNet-121 (mean absolute error 5.0--6.3\,dB, i.e.\ the error amplitude is underestimated by a factor of 1.8--2.1), whose SiLU and unbounded ReLU outputs have heavier tails than the Gaussian model; there the ranking of single tensors is weak (0.34--0.79). The static $\mathrm{SQNR}_\text{add}$ still orders the four networks by their simulated INT8 loss with one exchange.
+
+Neither format allows a static prediction of the accuracy, because the propagation factor is not visible in the parameters: the same FP8 noise of about 11\,dB becomes 6.8\,dB at the head of MobileNetV2 ($\bar\Gamma=3.3$, loss 10.3\%) and 12.0\,dB at the head of ResNet-50 ($\bar\Gamma=0.9$, loss 2.8\%), and 7.8\,dB becomes 17.0\,dB at the head of DenseNet-121 ($\bar\Gamma=0.12$, loss 0.6\%). One measurement of the head input closes this gap: the relation of Section~\ref{sec:worked}, calibrated on the TensorRT engines of the five other networks, predicts the relative loss of the simulated engines within the 95\% bootstrap interval in six of the eight cases (ResNet-50: 1.5 against 1.1\% for INT8, 3.7 against 2.8\% for FP8; DenseNet-121: 2.5 against 2.5\% and 1.5 against 0.6\%; EfficientNet-B0 FP8: 8.6 against 7.1\%; MobileNetV2 FP8: 9.8 against 10.3\%); the two misses are EfficientNet-B0 in INT8 (29.7 against 36.8\%, a factor of 1.24) and MobileNetV2 in INT8 (1.4 against 0.2\%, both below 2\%).
+
+The static analysis is therefore suited to decisions that do not need the propagation: whether weights need per-channel scales (ResNet-50: 15.8 against 7.4\,dB with one scale per tensor), how much noise FP8 injects into a given network, which batch normalisations amplify noise, which structures (depthwise inputs, imbalanced channels, gates, attention) are suspicious, and how a network ranks among measured references. Its INT8 noise is reliable to about 1\,dB for networks with bounded or unrectified activations and to about 5--6\,dB otherwise, and it gives no accuracy number. With one measurement of the quantized head input on about one hundred images, the relative loss follows within a factor of 1.4 wherever it exceeds 1\% (six of the eight cases), as long as the head-input SQNR lies in the range of the calibration networks ($-1$ to 22\,dB).
+
 \section{Discussion}\label{sec:discussion}
 
 The results relate to the literature as follows. The collapse of EfficientNet-B0 under per-tensor INT8 matches the known fragility of depthwise-separable networks~\cite{sheng2018quantization,nagel2019datafree}; Lemma~\ref{lem:noise} and $\bar\Gamma$ add a quantitative reason, namely that EfficientNet-B0 amplifies the injected noise instead of attenuating it. The accuracy advantage of FP8 confirms the analysis of Kuzmin et al.~\cite{kuzmin2022fp8}, and the speed advantage of INT8 for four of the five networks the hardware argument of van Baalen et al.~\cite{vanbaalen2023fp8}: which format is preferable depends on the architecture and the compiler. The dependence of INT8 accuracy on the range setting agrees with the finding that no calibration method is best for all networks~\cite{wu2020integer} and with the role of the calibration set~\cite{hubara2021accurate}, and adds the order of the calibration images as a hidden factor. The PEP-AI ranking is a gradient-free counterpart of Hessian-based mixed precision~\cite{dong2019hawq,yao2021hawqv3}. The corruption sensitivity reported for quantized classifiers~\cite{xiao2023robustness} appears for the detectors only under contrast loss, which Corollary~\ref{cor:static} explains, and NMS-free detectors~\cite{wang2024yolov10,zhao2024rtdetr} make duplicate suppression a learned function of small score differences, which INT8 can break.
@@ -945,7 +954,7 @@ DenseNet-121 & 187 & 30.5 [28.5, 33.3] & 2.6 & 6.1 & 6.6 & 0.90 \\
 \begin{sidewaystable}
 \footnotesize\setlength{\tabcolsep}{4pt}
 \caption{Noise and propagation formulas per number format}\label{tab:formulas}
-\begin{tabular}{@{}llllll@{}}
+\begin{tabular}{@{}p{3.3cm}p{3.6cm}p{3.1cm}p{2.0cm}p{2.7cm}p{2.6cm}@{}}
 \toprule
 Quantity & INT8 & FP8 (E4M3) & FP16 & Source & Status \\
 \midrule
@@ -953,14 +962,14 @@ Scale and grid & $s=\alpha/127$, uniform, 255 levels & $s=\alpha/448$, $p=4$ sig
 Injected noise of one quantizer & $\mathrm{SQNR}\approx52.9\,\mathrm{dB}-20\log_{10}\kappa$ & $6.02p+7.44=31.5$\,dB & $6.02p+7.44=73.7$\,dB & Lemma~\ref{lem:noise} & proved under (A1), (A2) \\
 Dependence on the range $\kappa=\alpha/\sigma$ & $-20$\,dB per decade; clipping above $\alpha$ & none in the normal range & none & Eqs.~\eqref{eq:sqnr-int8}, \eqref{eq:sqnr-fp} & proved \\
 Signal scaled by $c$ after calibration & $\Delta\mathrm{SQNR}=20\log_{10}c$ & $0$ for $c\sigma\gg2^{-6}s$ & $0$ & Corollary~\ref{cor:static} & proved, no clipping \\
-Head-input error & \multicolumn{3}{c}{$r_h^2=\sum_n\Gamma_{n\to h}\rho_n^2$; $\rho_n$ from the row above} & Proposition~\ref{prop:selective} & proved, linearised \\
-Prediction from FP32 statistics & \multicolumn{3}{c}{$\mathrm{SQNR}_\text{add}=-10\log_{10}\sum_n\rho_n^2$ (all $\Gamma=1$)} & Eq.~\eqref{eq:gammabar} & bound-free estimate \\
-Number $N$ of quantizers & \multicolumn{3}{c}{$\mathrm{SQNR}_\text{add}=-10\log_{10}N-10\log_{10}\langle\rho_n^2\rangle$: $-3$\,dB per doubling} & Eq.~\eqref{eq:gammabar} & identity \\
-Propagation factor (one measurement) & \multicolumn{3}{c}{$\bar\Gamma=10^{(\mathrm{SQNR}_\text{add}-\mathrm{SQNR}_h)/10}$; $<1$ attenuating, $>1$ amplifying} & Eq.~\eqref{eq:gammabar} & definition \\
-Plateau of a contracting chain & \multicolumn{3}{c}{$\mathrm{SQNR}_\infty=-20\log_{10}\rho+10\log_{10}(1-g^2)$ for $g<1$} & Proposition~\ref{prop:fixedpoint} & proved \\
-Gain of a non-folded BN & \multicolumn{3}{c}{closed form from $\gamma,\beta,\mu,v$} & Eq.~\eqref{eq:bn} & derived, equal noise per channel \\
-Layers to keep in FP16 & \multicolumn{3}{c}{the $k$ largest contributions $\Gamma_{n\to h}\rho_n^2$} & Proposition~\ref{prop:selective} & proved, linearised \\
-Relative loss vs head-input SQNR & \multicolumn{3}{c}{$\times10$ per 12.2\,dB, i.e.\ $\propto r_h^{1.64}$ (95\% CI 1.05--2.23)} & Section~\ref{sec:worked} & empirical, five networks \\
+Head-input error & \multicolumn{3}{p{9.1cm}}{$r_h^2=\sum_n\Gamma_{n\to h}\rho_n^2$; $\rho_n$ from the row above} & Proposition~\ref{prop:selective} & proved, linearised \\
+Prediction from FP32 statistics & \multicolumn{3}{p{9.1cm}}{$\mathrm{SQNR}_\text{add}=-10\log_{10}\sum_n\rho_n^2$ (all $\Gamma=1$)} & Eq.~\eqref{eq:gammabar} & bound-free estimate \\
+Number $N$ of quantizers & \multicolumn{3}{p{9.1cm}}{$\mathrm{SQNR}_\text{add}=-10\log_{10}N-10\log_{10}\langle\rho_n^2\rangle$: $-3$\,dB per doubling} & Eq.~\eqref{eq:gammabar} & identity \\
+Propagation factor (one measurement) & \multicolumn{3}{p{9.1cm}}{$\bar\Gamma=10^{(\mathrm{SQNR}_\text{add}-\mathrm{SQNR}_h)/10}$; $<1$ attenuating, $>1$ amplifying} & Eq.~\eqref{eq:gammabar} & definition \\
+Plateau of a contracting chain & \multicolumn{3}{p{9.1cm}}{$\mathrm{SQNR}_\infty=-20\log_{10}\rho+10\log_{10}(1-g^2)$ for $g<1$} & Proposition~\ref{prop:fixedpoint} & proved \\
+Gain of a non-folded BN & \multicolumn{3}{p{9.1cm}}{closed form from $\gamma,\beta,\mu,v$} & Eq.~\eqref{eq:bn} & derived, equal noise per channel \\
+Layers to keep in FP16 & \multicolumn{3}{p{9.1cm}}{the $k$ largest contributions $\Gamma_{n\to h}\rho_n^2$} & Proposition~\ref{prop:selective} & proved, linearised \\
+Relative loss vs head-input SQNR & \multicolumn{3}{p{9.1cm}}{$\times10$ per 12.2\,dB, i.e.\ $\propto r_h^{1.64}$ (95\% CI 1.05--2.23)} & Section~\ref{sec:worked} & empirical, five networks \\
 \botrule
 \end{tabular}
 \footnotetext{$\alpha$: clipping range, $\sigma$: root-mean-square value of the activation, $\kappa=\alpha/\sigma$, $p$: significand bits including the implicit one, $\rho_n$: relative noise injected at node $n$, $\langle\cdot\rangle$: mean over the $N$ quantizers, $\mathrm{SQNR}_h$: measured head-input SQNR, $g$: propagation gain of a chain, $r_h$: relative error of the head input. Proofs: Supplementary Sections~\ref{sec:supp-noise} and~\ref{sec:supp-prop}. The empirical relation is a least-squares fit of $\log_{10}$ of the relative loss on the head-input SQNR with a $t$-based confidence interval.}
@@ -994,20 +1003,20 @@ INT8 layer SQNR change (cumulative), severity 5 & Eq.~\eqref{eq:static} & $-$1.2
 \begin{sidewaystable}
 \footnotesize\setlength{\tabcolsep}{4pt}
 \caption{Prediction of INT8 tolerance for the five networks}\label{tab:prediction}
-\begin{tabular}{@{}lrrrrrrrrrrrrr@{}}
+\begin{tabular}{@{}lrrrrrrrrrrrr@{}}
 \toprule
-Model & Quantizers & \multicolumn{3}{c}{INT8 quantizer SQNR (dB)} & FP8 quantizer & \multicolumn{2}{c}{SQNR$_\text{add}$ (dB)} & SQNR$_h$ & $\bar\Gamma$ & \multicolumn{3}{c}{Relative INT8 loss (\%)} & FP8 loss \\
-\cmidrule{3-5}\cmidrule{7-8}\cmidrule{12-14}
- & & Eq.~\eqref{eq:sqnr-int8} & exact & MAE & SQNR (dB) & INT8 & FP8 & (dB) & & measured & LOO, SQNR$_\text{add}$ & LOO, SQNR$_h$ & (\%) \\
+Model & $N$ & \multicolumn{3}{c}{INT8 quantizer (dB)} & \multicolumn{2}{c}{SQNR$_\text{add}$ (dB)} & SQNR$_h$ & $\bar\Gamma$ & \multicolumn{3}{c}{INT8 loss (\%)} & FP8 \\
+\cmidrule{3-5}\cmidrule{6-7}\cmidrule{10-12}
+ & & Eq.~\eqref{eq:sqnr-int8} & exact & MAE & INT8 & FP8 & (dB) & & meas. & LOO$_\text{add}$ & LOO$_h$ & loss (\%) \\
 \midrule
-Faster R-CNN R50-FPN & 62 & 27.9 & 30.7 & 2.8 & 31.5 & 12.5 & 13.8 & 21.5 & 0.13 & 0.7 & 0.6 & 0.5 & 1.0 \\
-YOLOv10-S & 79 & 29.4 & 28.0 & 1.7 & 31.5 & 6.0 & 13.5 & 11.6 & 0.28 & 4.9 & 8.3 & 3.8 & 0.9 \\
-YOLOv10-X & 187 & 27.2 & 26.7 & 1.3 & 31.5 & 2.6 & 10.1 & 4.3 & 0.69 & 11.5 & 48.9 & 18.1 & 0.3 \\
-EfficientNet-B0 & 114 & 35.0 & 32.5 & 1.1 & 31.5 & 3.7 & 14.6 & $-$0.9 & 2.89 & 62.3 & 10.5 & 28.7 & 0.6 \\
-DenseNet-121 & 187 & 29.4 & 30.5 & 2.6 & 31.5 & 6.1 & 10.8 & 6.6 & 0.90 & 7.5 & 7.2 & 11.2 & 0.5 \\
+Faster R-CNN R50-FPN & 62 & 27.9 & 30.7 & 2.8 & 12.5 & 13.8 & 21.5 & 0.13 & 0.7 & 0.6 & 0.5 & 1.0 \\
+YOLOv10-S & 79 & 29.4 & 28.0 & 1.7 & 6.0 & 13.5 & 11.6 & 0.28 & 4.9 & 8.3 & 3.8 & 0.9 \\
+YOLOv10-X & 187 & 27.2 & 26.7 & 1.3 & 2.6 & 10.1 & 4.3 & 0.69 & 11.5 & 48.9 & 18.1 & 0.3 \\
+EfficientNet-B0 & 114 & 35.0 & 32.5 & 1.1 & 3.7 & 14.6 & $-$0.9 & 2.89 & 62.3 & 10.5 & 28.7 & 0.6 \\
+DenseNet-121 & 187 & 29.4 & 30.5 & 2.6 & 6.1 & 10.8 & 6.6 & 0.90 & 7.5 & 7.2 & 11.2 & 0.5 \\
 \botrule
 \end{tabular}
-\footnotetext{Quantizer SQNR: median over the quantizers upstream of the head input; Eq.~\eqref{eq:sqnr-int8} from the normalised range, exact from the calibrated scale applied to FP32 activations (32 images); MAE: mean absolute difference for quantizers without clipping; the FP8 prediction of Eq.~\eqref{eq:sqnr-fp} is 31.5\,dB. SQNR$_\text{add}$: Eq.~\eqref{eq:gammabar} with unit propagation factors (FP32 statistics only); SQNR$_h$: measured head-input SQNR of the INT8 engine (one measurement). Relative loss: accuracy loss of the deployed engine divided by the FP32 accuracy (mAP or top-1). LOO: leave-one-out prediction of $\log_{10}$ of the relative loss from a straight line fitted to the other four networks (all five: 6.2\,dB per decade, $R^2=0.77$ for SQNR$_\text{add}$; 12.2\,dB per decade, $R^2=0.96$ for SQNR$_h$).}
+\footnotetext{Quantizer SQNR: median over the quantizers upstream of the head input; Eq.~\eqref{eq:sqnr-int8} from the normalised range, exact from the calibrated scale applied to FP32 activations (32 images); MAE: mean absolute difference for quantizers without clipping. FP8: every quantizer within 0.02\,dB of the 31.5\,dB of Eq.~\eqref{eq:sqnr-fp}. $N$: quantizers upstream of the head. SQNR$_\text{add}$: Eq.~\eqref{eq:gammabar} with unit propagation factors (FP32 statistics only); SQNR$_h$: measured head-input SQNR of the INT8 engine (one measurement). Relative loss: accuracy loss of the deployed engine divided by the FP32 accuracy (mAP or top-1). LOO$_\text{add}$, LOO$_h$: leave-one-out prediction of $\log_{10}$ of the relative loss from a straight line fitted to the other four networks (all five: 6.2\,dB per decade, $R^2=0.77$ for SQNR$_\text{add}$; 12.2\,dB per decade, $R^2=0.96$ for SQNR$_h$).}
 \end{sidewaystable}
 % END GENERATED X_prediction
 
@@ -1015,29 +1024,56 @@ DenseNet-121 & 187 & 29.4 & 30.5 & 2.6 & 31.5 & 6.1 & 10.8 & 6.6 & 0.90 & 7.5 & 
 \begin{sidewaystable}
 \footnotesize\setlength{\tabcolsep}{4pt}
 \caption{Static analysis of the FP32 parameters}\label{tab:static}
-\begin{tabular}{@{}lrrrrrrrrrrrrrr@{}}
+\begin{tabular}{@{}lrrrrrrrrrrrr@{}}
 \toprule
-Model & Params & Convs & DW & $N$ & \multicolumn{2}{c}{Channel spread} & \multicolumn{2}{c}{Weights, INT8 (dB)} & Weights & Act.\ INT8 & \multicolumn{2}{c}{Static SQNR$_\text{add}$ (dB)} & Non-fold.\ BN & Measured \\
-\cmidrule{6-7}\cmidrule{8-9}\cmidrule{12-13}
- & (M) & & & & median & max & per ch. & per tensor & FP8 (dB) & median (dB) & INT8 & FP8 & (gain) & SQNR$_\text{add}$ (dB) \\
+Model & Params & DW & $N$ & \multicolumn{2}{c}{Ch.\ spread} & \multicolumn{2}{c}{Weights INT8} & Act.\ INT8 & \multicolumn{2}{c}{SQNR$_\text{add}$} & BN & Meas. \\
+\cmidrule{5-6}\cmidrule{7-8}\cmidrule{10-11}
+ & (M) & & & med. & max & per ch. & per t. & (dB) & INT8 & FP8 & gain & (dB) \\
 \midrule
-Faster R-CNN R50-FPN & 26.8 & 61 & 0 & 53 & 2.0 & 1539 & 38.3 & 29.1 & 31.8 & 38.7 & 20.2 & 14.3 & -- & 12.5 \\
-YOLOv10-S & 8.1 & 112 & 24 & 99 & 1.8 & 5 & 39.8 & 32.2 & 32.0 & 38.8 & 18.0 & 11.6 & -- & 6.0 \\
-YOLOv10-X & 31.7 & 198 & 70 & 185 & 1.8 & 851 & 39.2 & 31.1 & 32.0 & 38.4 & 14.9 & 8.9 & -- & 2.6 \\
-EfficientNet-B0 & 5.2 & 82 & 16 & 49 & 3.3 & 29 & 42.6 & 33.0 & 32.3 & 34.3 & 16.2 & 14.6 & -- & 3.7 \\
-DenseNet-121 & 7.9 & 121 & 0 & 121 & 2.0 & 1615 & 38.4 & 32.7 & 31.7 & 38.4 & 17.1 & 10.7 & 62 (1.24) & 6.1 \\
-MobileNetV2$^\dagger$ & 3.5 & 53 & 17 & 52 & 3.8 & 99 & 43.2 & 34.2 & 32.3 & 40.2 & 22.0 & 14.5 & -- & -- \\
-ResNet-50$^\dagger$ & 25.5 & 54 & 0 & 53 & 2.6 & 28 & 37.4 & 26.1 & 31.9 & 37.7 & 18.8 & 14.3 & -- & -- \\
+Faster R-CNN R50-FPN & 26.8 & 0 & 53 & 2.0 & 1539 & 38.3 & 29.1 & 38.7 & 20.6 & 14.3 & -- & 12.5 \\
+YOLOv10-S & 8.1 & 24 & 99 & 1.8 & 5 & 39.8 & 32.2 & 38.8 & 18.0 & 11.6 & -- & 6.0 \\
+YOLOv10-X & 31.7 & 70 & 185 & 1.8 & 851 & 39.2 & 31.1 & 38.4 & 14.9 & 8.9 & -- & 2.6 \\
+EfficientNet-B0 & 5.2 & 16 & 49 & 3.3 & 29 & 42.6 & 33.0 & 34.3 & 16.2 & 14.6 & -- & 3.7 \\
+DenseNet-121 & 7.9 & 0 & 121 & 2.0 & 1615 & 38.4 & 32.7 & 38.4 & 17.1 & 10.7 & 1.24 (62) & 6.1 \\
+MobileNetV2$^\dagger$ & 3.5 & 17 & 52 & 3.8 & 99 & 43.2 & 34.2 & 40.2 & 22.0 & 14.5 & -- & -- \\
+ResNet-50$^\dagger$ & 25.5 & 0 & 53 & 2.6 & 21 & 37.4 & 26.1 & 38.0 & 19.0 & 14.3 & -- & -- \\
 \botrule
 \end{tabular}
-\footnotetext{Computed from the weights and the batch-normalisation buffers only (no image, no forward pass; \texttt{43\_static\_analysis.py}). DW: depthwise convolutions. $N$: activation tensors modelled from batch normalisation. Channel spread: 90th/10th percentile of the channel RMS under one per-tensor scale. Weights: median exact SQNR over the layers, BN folded. Act.\ INT8: median predicted injected SQNR (Gaussian channels, MSE-optimal range). Non-fold.\ BN: number and median gain of Eq.~\eqref{eq:bn}. Measured SQNR$_\text{add}$: from FP32 activations and the calibrated scales of the toolchain (Table~\ref{tab:prediction}). $^\dagger$ not used elsewhere in this article (Table~\ref{tab:staticval}). Ranking of the five networks of the article by static INT8 SQNR$_\text{add}$ against their relative INT8 loss: Spearman $\rho=0.9$ (exact one-sided $p=0.04$).}
+\footnotetext{Computed from the weights and the batch-normalisation buffers only (no image, no forward pass; \texttt{43\_static\_analysis.py}). DW: depthwise convolutions. $N$: activation tensors modelled from batch normalisation. Channel spread: 90th/10th percentile of the channel RMS under one per-tensor scale. Weights: median exact SQNR over the layers, BN folded, per channel and per tensor (FP8 weights: 31.7--32.3\,dB for all networks). Act.\ INT8: median predicted injected SQNR (Gaussian channels, MSE-optimal range). SQNR$_\text{add}$: static, in dB. BN gain: median gain of Eq.~\eqref{eq:bn} over the non-foldable batch normalisations (their number in brackets). Meas.: SQNR$_\text{add}$ from FP32 activations and the calibrated scales of the toolchain (Table~\ref{tab:prediction}). $^\dagger$ not used elsewhere in this article (Table~\ref{tab:staticval}). Ranking of the five networks of the article by static INT8 SQNR$_\text{add}$ against their relative INT8 loss: Spearman $\rho=0.9$ (exact one-sided $p=0.04$).}
 \end{sidewaystable}
 % END GENERATED X_static
+
+% BEGIN GENERATED X_static_validation
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Static analysis against simulated quantization}\label{tab:staticval}
+\begin{tabular}{@{}llrrrrrrrrrr@{}}
+\toprule
+Model & Format & \multicolumn{3}{c}{Quantizer SQNR, static $-$ measured} & \multicolumn{2}{c}{SQNR$_\text{add}$ (dB)} & SQNR$_h$ & $\bar\Gamma$ & Top-1 & \multicolumn{2}{c}{Relative loss (\%)} \\
+\cmidrule{3-5}\cmidrule{6-7}\cmidrule{11-12}
+ & & median (dB) & MAE (dB) & rank $\rho$ & static & measured & (dB) & & (\%) & measured [95\% CI] & predicted \\
+\midrule
+MobileNetV2$^\dagger$ & INT8 & $+$0.4 & 1.1 & 0.98 & 20.3 & 19.2 & 17.1 & 1.61 & 59.1 & 0.2 [$-$1.0, 1.3] & 1.4 \\
+ & FP8 & 0.0 & 0.14 & -- & 12.0 & 12.0 & 6.8 & 3.28 & 53.0 & 10.3 [7.8, 12.6] & 9.8 \\
+\midrule
+ResNet-50$^\dagger$ & INT8 & $+$5.4 & 6.3 & 0.34 & 15.8 & 10.1 & 16.9 & 0.21 & 68.7 & 1.1 [0.0, 2.0] & 1.5 \\
+ & FP8 & 0.0 & 0.02 & -- & 11.5 & 11.5 & 12.0 & 0.88 & 67.5 & 2.8 [1.3, 4.3] & 3.7 \\
+\midrule
+EfficientNet-B0 & INT8 & $+$4.0 & 5.0 & 0.79 & 15.2 & 9.3 & 1.0 & 6.86 & 41.5 & 36.8 [33.9, 39.6] & 29.7 \\
+ & FP8 & 0.0 & 0.11 & -- & 11.1 & 11.1 & 7.6 & 2.25 & 61.1 & 7.1 [5.0, 9.0] & 8.6 \\
+\midrule
+DenseNet-121 & INT8 & $+$6.2 & 6.1 & 0.36 & 14.1 & 9.2 & 14.2 & 0.32 & 59.5 & 2.5 [0.8, 4.1] & 2.5 \\
+ & FP8 & 0.0 & 0.04 & -- & 7.8 & 7.8 & 17.0 & 0.12 & 60.7 & 0.6 [$-$0.9, 1.9] & 1.5 \\
+\botrule
+\end{tabular}
+\footnotetext{ImageNetV2, 128 calibration and 2000 evaluation images, CPU simulation (\texttt{44\_validate\_static.py}): symmetric per-tensor quantizers on every batch-normalised tensor (INT8: MSE-optimal range; FP8 E4M3: maximum), weights per output channel. Top-1 of FP32: MobileNetV2$^\dagger$ 59.2\%, ResNet-50$^\dagger$ 69.4\%, EfficientNet-B0 65.8\%, DenseNet-121 61.1\%. Quantizer SQNR: static prediction from the BN parameters against the exact injected SQNR on 64 evaluation images. SQNR$_\text{add}$ includes the weight quantizers. Relative loss: measured with a paired bootstrap interval, and predicted from the measured SQNR$_h$ with the calibration of Table~\ref{tab:prediction}. The simulated placement and calibration differ from the TensorRT toolchain, so the INT8 numbers of EfficientNet-B0 and DenseNet-121 differ from Table~\ref{tab:accuracy}. $^\dagger$ not used elsewhere in this article.}
+\end{sidewaystable}
+% END GENERATED X_static_validation
 
 \begin{sidewaystable}
 \footnotesize\setlength{\tabcolsep}{4pt}
 \caption{Network properties and their effect on the quantization noise}\label{tab:factors}
-\begin{tabular}{@{}p{3.6cm}p{5.6cm}p{4.2cm}p{6.4cm}@{}}
+\begin{tabular}{@{}p{3.2cm}p{5.0cm}p{3.8cm}p{5.6cm}@{}}
 \toprule
 Property & Effect on the head-input SQNR & Formula & Example in this article \\
 \midrule

@@ -1,0 +1,24 @@
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Static analysis against simulated quantization}\label{tab:staticval}
+\begin{tabular}{@{}llrrrrrrrrrr@{}}
+\toprule
+Model & Format & \multicolumn{3}{c}{Quantizer SQNR, static $-$ measured} & \multicolumn{2}{c}{SQNR$_\text{add}$ (dB)} & SQNR$_h$ & $\bar\Gamma$ & Top-1 & \multicolumn{2}{c}{Relative loss (\%)} \\
+\cmidrule{3-5}\cmidrule{6-7}\cmidrule{11-12}
+ & & median (dB) & MAE (dB) & rank $\rho$ & static & measured & (dB) & & (\%) & measured [95\% CI] & predicted \\
+\midrule
+MobileNetV2$^\dagger$ & INT8 & $+$0.4 & 1.1 & 0.98 & 20.3 & 19.2 & 17.1 & 1.61 & 59.1 & 0.2 [$-$1.0, 1.3] & 1.4 \\
+ & FP8 & 0.0 & 0.14 & -- & 12.0 & 12.0 & 6.8 & 3.28 & 53.0 & 10.3 [7.8, 12.6] & 9.8 \\
+\midrule
+ResNet-50$^\dagger$ & INT8 & $+$5.4 & 6.3 & 0.34 & 15.8 & 10.1 & 16.9 & 0.21 & 68.7 & 1.1 [0.0, 2.0] & 1.5 \\
+ & FP8 & 0.0 & 0.02 & -- & 11.5 & 11.5 & 12.0 & 0.88 & 67.5 & 2.8 [1.3, 4.3] & 3.7 \\
+\midrule
+EfficientNet-B0 & INT8 & $+$4.0 & 5.0 & 0.79 & 15.2 & 9.3 & 1.0 & 6.86 & 41.5 & 36.8 [33.9, 39.6] & 29.7 \\
+ & FP8 & 0.0 & 0.11 & -- & 11.1 & 11.1 & 7.6 & 2.25 & 61.1 & 7.1 [5.0, 9.0] & 8.6 \\
+\midrule
+DenseNet-121 & INT8 & $+$6.2 & 6.1 & 0.36 & 14.1 & 9.2 & 14.2 & 0.32 & 59.5 & 2.5 [0.8, 4.1] & 2.5 \\
+ & FP8 & 0.0 & 0.04 & -- & 7.8 & 7.8 & 17.0 & 0.12 & 60.7 & 0.6 [$-$0.9, 1.9] & 1.5 \\
+\botrule
+\end{tabular}
+\footnotetext{ImageNetV2, 128 calibration and 2000 evaluation images, CPU simulation (\texttt{44\_validate\_static.py}): symmetric per-tensor quantizers on every batch-normalised tensor (INT8: MSE-optimal range; FP8 E4M3: maximum), weights per output channel. Top-1 of FP32: MobileNetV2$^\dagger$ 59.2\%, ResNet-50$^\dagger$ 69.4\%, EfficientNet-B0 65.8\%, DenseNet-121 61.1\%. Quantizer SQNR: static prediction from the BN parameters against the exact injected SQNR on 64 evaluation images. SQNR$_\text{add}$ includes the weight quantizers. Relative loss: measured with a paired bootstrap interval, and predicted from the measured SQNR$_h$ with the calibration of Table~\ref{tab:prediction}. The simulated placement and calibration differ from the TensorRT toolchain, so the INT8 numbers of EfficientNet-B0 and DenseNet-121 differ from Table~\ref{tab:accuracy}. $^\dagger$ not used elsewhere in this article.}
+\end{sidewaystable}

@@ -67,6 +67,55 @@ Without arguments for `--tables`, the script uses `results/tables` if present an
 reference tables, so it runs on a fresh clone. Tables C7–C9 and Fig. C3 of the article contain the
 formulas, the worked example and the predictions for all five networks.
 
+## Static analysis of any model: no images, no execution (Sections 2.13 and 3.9)
+
+`scripts/43_static_analysis.py` reads only the weights and the batch-normalisation buffers of an FP32
+PyTorch model and reports, in 20–35 s on a CPU, how much noise each number format injects:
+
+```bash
+python scripts/43_static_analysis.py --model all                  # the five networks of the article
+python scripts/43_static_analysis.py --torchvision resnet50       # any torchvision classification model
+python scripts/43_static_analysis.py --module my_model.pt         # any model saved with torch.save(model, path)
+```
+
+What it computes: exact INT8 (per channel, per tensor) and FP8 SQNR of every weight tensor; for every
+batch-normalised tensor a Gaussian model per channel, N(β, γ²v/(v+ε)), passed through the following
+activation, with the channel imbalance, the MSE-optimal range κ and the injected INT8/FP8 SQNR (Lemma 1);
+the network-level SQNR_add for INT8 with per-channel or per-tensor weights, FP8 and FP16; the gain of
+non-foldable batch normalisations (Eq. A3); structural flags; and where the network falls among the five
+measured networks of the article. Output: a report on the screen, `results/tables/static_analysis.csv` and
+per-layer tables in `results/tables/static/`.
+
+How network properties enter (Table C12 of the article): SQNR_add = −10 log₁₀ N − 10 log₁₀⟨ρ²⟩, i.e. −3 dB per
+doubling of the number of quantized tensors; the mean is dominated by the weakest tensors (outlier channels,
+depthwise inputs, gates, attention), −20 dB per decade of κ; width matters only through channel imbalance;
+parameter count and spatial size do not matter.
+
+**Validation.** `scripts/44_validate_static.py --torchvision <name> --images <folder>` executes a model on a
+labelled image folder (ImageNet class-index sub-folders, e.g. ImageNetV2) with simulated quantization at the
+modelled tensors, only to check the static prediction. Results on two networks not used elsewhere in the
+article and on the two classifiers of the article (ImageNetV2, 128 calibration and 2 000 evaluation images):
+
+| Network | FP8 noise: static − measured | INT8 noise: static − measured (median, MAE) | INT8 loss measured [95 % CI] / predicted* | FP8 loss measured [95 % CI] / predicted* |
+|---|---|---|---|---|
+| MobileNetV2 (new) | 0.14 dB | +0.4 dB, 1.1 dB | 0.2 % [−1.0, 1.3] / 1.4 % | 10.3 % [7.8, 12.6] / 9.8 % |
+| ResNet-50 (new) | 0.02 dB | +5.4 dB, 6.3 dB | 1.1 % [0.0, 2.0] / 1.5 % | 2.8 % [1.3, 4.3] / 3.7 % |
+| EfficientNet-B0 | 0.11 dB | +4.0 dB, 5.0 dB | 36.8 % [33.9, 39.6] / 29.7 % | 7.1 % [5.0, 9.0] / 8.6 % |
+| DenseNet-121 | 0.04 dB | +6.2 dB, 6.1 dB | 2.5 % [0.8, 4.1] / 2.5 % | 0.6 % [−0.9, 1.9] / 1.5 % |
+
+\* predicted from one measurement of the quantized head input (Section 3.8), not from the static analysis.
+
+**What it is good for, and how far it can be trusted**
+
+| Question | Reliability |
+|---|---|
+| Per-channel or per-tensor weight scales? | exact (no model involved); e.g. ResNet-50: 15.8 dB vs 7.4 dB at the network level |
+| How much noise does FP8 inject? | within 0.02–0.14 dB per quantizer and 0.05 dB for the whole network on all four checked networks: floating-point noise does not depend on the distribution (Lemma 1) |
+| How much noise does INT8 inject? | within about 1 dB for bounded or unrectified activations (MobileNetV2); 4–6 dB too optimistic for SiLU and unbounded ReLU outputs (error amplitude underestimated by a factor of about 2); 8–12 dB more optimistic than the entropy calibration of the TensorRT toolchain |
+| Which batch normalisations amplify noise, which structures are suspicious? | BN gain ranks the measured amplification with ρ = 0.83 (DenseNet-121) |
+| How does a network rank? | static SQNR_add orders the INT8 loss of the five article networks with ρ = 0.9 (one exchange) |
+| Accuracy loss in %? | **not from the static analysis**, because the propagation of the noise is not visible in the parameters (the same ~11 dB of FP8 noise ends at 6.8 dB on the head of MobileNetV2 and 17.0 dB on DenseNet-121). One measurement of the head input on ~100 images predicts it within a factor of 1.4 wherever the loss exceeds 1 % (`42_predict_int8.py`, `44_validate_static.py`) |
+
 ## Setup
 
 ```bash

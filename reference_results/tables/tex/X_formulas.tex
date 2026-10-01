@@ -1,7 +1,7 @@
 \begin{sidewaystable}
 \footnotesize\setlength{\tabcolsep}{4pt}
 \caption{Noise and propagation formulas per number format}\label{tab:formulas}
-\begin{tabular}{@{}llllll@{}}
+\begin{tabular}{@{}p{3.3cm}p{3.6cm}p{3.1cm}p{2.0cm}p{2.7cm}p{2.6cm}@{}}
 \toprule
 Quantity & INT8 & FP8 (E4M3) & FP16 & Source & Status \\
 \midrule
@@ -9,14 +9,14 @@ Scale and grid & $s=\alpha/127$, uniform, 255 levels & $s=\alpha/448$, $p=4$ sig
 Injected noise of one quantizer & $\mathrm{SQNR}\approx52.9\,\mathrm{dB}-20\log_{10}\kappa$ & $6.02p+7.44=31.5$\,dB & $6.02p+7.44=73.7$\,dB & Lemma~\ref{lem:noise} & proved under (A1), (A2) \\
 Dependence on the range $\kappa=\alpha/\sigma$ & $-20$\,dB per decade; clipping above $\alpha$ & none in the normal range & none & Eqs.~\eqref{eq:sqnr-int8}, \eqref{eq:sqnr-fp} & proved \\
 Signal scaled by $c$ after calibration & $\Delta\mathrm{SQNR}=20\log_{10}c$ & $0$ for $c\sigma\gg2^{-6}s$ & $0$ & Corollary~\ref{cor:static} & proved, no clipping \\
-Head-input error & \multicolumn{3}{c}{$r_h^2=\sum_n\Gamma_{n\to h}\rho_n^2$; $\rho_n$ from the row above} & Proposition~\ref{prop:selective} & proved, linearised \\
-Prediction from FP32 statistics & \multicolumn{3}{c}{$\mathrm{SQNR}_\text{add}=-10\log_{10}\sum_n\rho_n^2$ (all $\Gamma=1$)} & Eq.~\eqref{eq:gammabar} & bound-free estimate \\
-Number $N$ of quantizers & \multicolumn{3}{c}{$\mathrm{SQNR}_\text{add}=-10\log_{10}N-10\log_{10}\langle\rho_n^2\rangle$: $-3$\,dB per doubling} & Eq.~\eqref{eq:gammabar} & identity \\
-Propagation factor (one measurement) & \multicolumn{3}{c}{$\bar\Gamma=10^{(\mathrm{SQNR}_\text{add}-\mathrm{SQNR}_h)/10}$; $<1$ attenuating, $>1$ amplifying} & Eq.~\eqref{eq:gammabar} & definition \\
-Plateau of a contracting chain & \multicolumn{3}{c}{$\mathrm{SQNR}_\infty=-20\log_{10}\rho+10\log_{10}(1-g^2)$ for $g<1$} & Proposition~\ref{prop:fixedpoint} & proved \\
-Gain of a non-folded BN & \multicolumn{3}{c}{closed form from $\gamma,\beta,\mu,v$} & Eq.~\eqref{eq:bn} & derived, equal noise per channel \\
-Layers to keep in FP16 & \multicolumn{3}{c}{the $k$ largest contributions $\Gamma_{n\to h}\rho_n^2$} & Proposition~\ref{prop:selective} & proved, linearised \\
-Relative loss vs head-input SQNR & \multicolumn{3}{c}{$\times10$ per 12.2\,dB, i.e.\ $\propto r_h^{1.64}$ (95\% CI 1.05--2.23)} & Section~\ref{sec:worked} & empirical, five networks \\
+Head-input error & \multicolumn{3}{p{9.1cm}}{$r_h^2=\sum_n\Gamma_{n\to h}\rho_n^2$; $\rho_n$ from the row above} & Proposition~\ref{prop:selective} & proved, linearised \\
+Prediction from FP32 statistics & \multicolumn{3}{p{9.1cm}}{$\mathrm{SQNR}_\text{add}=-10\log_{10}\sum_n\rho_n^2$ (all $\Gamma=1$)} & Eq.~\eqref{eq:gammabar} & bound-free estimate \\
+Number $N$ of quantizers & \multicolumn{3}{p{9.1cm}}{$\mathrm{SQNR}_\text{add}=-10\log_{10}N-10\log_{10}\langle\rho_n^2\rangle$: $-3$\,dB per doubling} & Eq.~\eqref{eq:gammabar} & identity \\
+Propagation factor (one measurement) & \multicolumn{3}{p{9.1cm}}{$\bar\Gamma=10^{(\mathrm{SQNR}_\text{add}-\mathrm{SQNR}_h)/10}$; $<1$ attenuating, $>1$ amplifying} & Eq.~\eqref{eq:gammabar} & definition \\
+Plateau of a contracting chain & \multicolumn{3}{p{9.1cm}}{$\mathrm{SQNR}_\infty=-20\log_{10}\rho+10\log_{10}(1-g^2)$ for $g<1$} & Proposition~\ref{prop:fixedpoint} & proved \\
+Gain of a non-folded BN & \multicolumn{3}{p{9.1cm}}{closed form from $\gamma,\beta,\mu,v$} & Eq.~\eqref{eq:bn} & derived, equal noise per channel \\
+Layers to keep in FP16 & \multicolumn{3}{p{9.1cm}}{the $k$ largest contributions $\Gamma_{n\to h}\rho_n^2$} & Proposition~\ref{prop:selective} & proved, linearised \\
+Relative loss vs head-input SQNR & \multicolumn{3}{p{9.1cm}}{$\times10$ per 12.2\,dB, i.e.\ $\propto r_h^{1.64}$ (95\% CI 1.05--2.23)} & Section~\ref{sec:worked} & empirical, five networks \\
 \botrule
 \end{tabular}
 \footnotetext{$\alpha$: clipping range, $\sigma$: root-mean-square value of the activation, $\kappa=\alpha/\sigma$, $p$: significand bits including the implicit one, $\rho_n$: relative noise injected at node $n$, $\langle\cdot\rangle$: mean over the $N$ quantizers, $\mathrm{SQNR}_h$: measured head-input SQNR, $g$: propagation gain of a chain, $r_h$: relative error of the head input. Proofs: Supplementary Sections~\ref{sec:supp-noise} and~\ref{sec:supp-prop}. The empirical relation is a least-squares fit of $\log_{10}$ of the relative loss on the head-input SQNR with a $t$-based confidence interval.}
