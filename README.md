@@ -1,6 +1,6 @@
 # EchteAI — PEP-AI validation of quantized perception models
 
-> T. Menyhárt, A. Hajdu, R. Lakatos: *PEP-AI Validated Quantization for Sustainable Edge Computing in
+> T. Menyhárt, A. Hajdu, R. Lakatos: *PEP-AI Validated Quantization for Energy-Efficient Perception in
 > Intelligent Transportation Systems*. Journal manuscript (in preparation).
 
 **Manuscript (PDF): [`paper/PEP-AI_manuscript.pdf`](paper/PEP-AI_manuscript.pdf)**
