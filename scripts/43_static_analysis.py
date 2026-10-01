@@ -260,19 +260,26 @@ def summarise(name, layers, acts, bns, extra):
     return s
 
 
+def pct(db):
+    """Relative error r = 10^(-SQNR/20) in percent of the signal, e.g. '38.0 dB (1.3 %)'."""
+    return f"{db:.1f} dB ({100 * 10 ** (-db / 20):.1f} %)"
+
+
 def report(s, layers, acts, bns):
     print(f"\n=== {s['model']}: {s['params_m']:.1f} M parameters, {s['conv_linear_layers']} conv/linear layers "
           f"({s['depthwise_convs']} depthwise)")
-    print(f"  weights      INT8 per channel: median {s['w_int8_per_channel_median_db']:.1f} dB "
-          f"(worst {s['w_int8_per_channel_min_db']:.1f}); per tensor: median {s['w_int8_per_tensor_median_db']:.1f} dB "
-          f"(worst {s['w_int8_per_tensor_min_db']:.1f}); FP8: {s['w_fp8_median_db']:.1f} dB")
+    print("  (dB values are SQNR; in brackets the relative error r = 10^(-SQNR/20) in percent of the signal)")
+    print(f"  weights      INT8 per channel: median {pct(s['w_int8_per_channel_median_db'])}, "
+          f"worst {pct(s['w_int8_per_channel_min_db'])}")
+    print(f"               INT8 per tensor:  median {pct(s['w_int8_per_tensor_median_db'])}, "
+          f"worst {pct(s['w_int8_per_tensor_min_db'])}; FP8: median {pct(s['w_fp8_median_db'])}")
     print(f"  activations  {s['act_quantizers']} BN-modelled quantizers; channel spread median "
           f"{s['act_channel_spread_median']:.1f}x (max {s['act_channel_spread_max']:.0f}x); MSE-optimal kappa median "
           f"{s['act_kappa_median']:.1f}")
-    print(f"               INT8 injected SQNR median {s['act_int8_sqnr_median_db']:.1f} dB "
-          f"(worst {s['act_int8_sqnr_min_db']:.1f}); FP8 {s['act_fp8_sqnr_median_db']:.1f} dB")
-    print(f"  screening    static SQNR_add: INT8 {s['static_sqnr_add_int8_db']:.1f} dB, FP8 "
-          f"{s['static_sqnr_add_fp8_db']:.1f} dB (unit propagation factors, no data)")
+    print(f"               noise injected per quantizer: INT8 median {pct(s['act_int8_sqnr_median_db'])}, "
+          f"worst {pct(s['act_int8_sqnr_min_db'])}; FP8 {pct(s['act_fp8_sqnr_median_db'])}")
+    print(f"  screening    all activation quantizers together (unit propagation factors, no data): "
+          f"INT8 {pct(s['static_sqnr_add_int8_db'])}, FP8 {pct(s['static_sqnr_add_fp8_db'])}")
     if s["nonfoldable_bn"]:
         print(f"  BN gain      {s['nonfoldable_bn']} non-foldable BN, Eq. (A3) median {s['bn_gain_median']:.2f} "
               f"(max {s['bn_gain_max']:.2f}); > 1 amplifies upstream noise -> candidate for FP16 placement")
@@ -280,7 +287,7 @@ def report(s, layers, acts, bns):
           f"{s['attention_blocks']} attention blocks")
     worst = acts.nsmallest(3, "sqnr_int8_db")
     for _, r in worst.iterrows():
-        print(f"  weakest      {r.tensor} ({r.activation}): INT8 {r.sqnr_int8_db:.1f} dB, spread "
+        print(f"  weakest      {r.tensor} ({r.activation}): INT8 {pct(r.sqnr_int8_db)}, spread "
               f"{r.channel_spread:.0f}x, kappa {r.kappa:.1f}")
     flags = []
     if s["depthwise_convs"]:
@@ -328,11 +335,10 @@ def scenarios(s, layers, acts):
 
 def report_scenarios(s, layers, acts):
     rows, refs = scenarios(s, layers, acts)
-    print("  scenarios    static SQNR_add with weights (higher = less noise at the head input) and the relative error")
-    print("               r = 10^(-SQNR/20) it corresponds to, with unit propagation factors (an estimate of the noise,")
-    print("               not of the accuracy loss):")
+    print("  scenarios    activations and weights together, with unit propagation factors: the expected deviation at")
+    print("               the head input if the network neither attenuates nor amplifies the noise (not the accuracy loss):")
     for label, v in rows:
-        print(f"                 {label:28s} {v:6.1f} dB   r ~ {100 * 10 ** (-v / 20):5.1f} % of the signal")
+        print(f"                 {label:28s} {v:6.1f} dB   ({100 * 10 ** (-v / 20):4.1f} % of the signal)")
     if refs:
         v = s["static_sqnr_add_int8_db"]
         print(f"  references   static INT8 SQNR_add of this network: {v:.1f} dB. Measured networks of the article "

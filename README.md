@@ -87,23 +87,24 @@ Example output (ResNet-50, a network not used elsewhere in the article):
 
 ```text
 === resnet50: 25.5 M parameters, 54 conv/linear layers (0 depthwise)
-  weights      INT8 per channel: median 37.4 dB (worst 25.7); per tensor: median 26.1 dB (worst 19.7); FP8: 31.9 dB
+  (dB values are SQNR; in brackets the relative error r = 10^(-SQNR/20) in percent of the signal)
+  weights      INT8 per channel: median 37.4 dB (1.3 %), worst 25.7 dB (5.2 %)
+               INT8 per tensor:  median 26.1 dB (4.9 %), worst 19.7 dB (10.4 %); FP8: median 31.9 dB (2.6 %)
   activations  53 BN-modelled quantizers; channel spread median 2.6x (max 21x); MSE-optimal kappa median 7.4
-               INT8 injected SQNR median 38.0 dB (worst 30.4); FP8 31.5 dB
-  screening    static SQNR_add: INT8 19.0 dB, FP8 14.3 dB (unit propagation factors, no data)
+               noise injected per quantizer: INT8 median 38.0 dB (1.3 %), worst 30.4 dB (3.0 %); FP8 31.5 dB (2.7 %)
+  screening    all activation quantizers together (unit propagation factors, no data): INT8 19.0 dB (11.2 %), FP8 14.3 dB (19.3 %)
   structure    0 sigmoid-type activations (SiLU / gates), 0 attention blocks
-  weakest      layer3.1.bn3 (identity): INT8 30.4 dB, spread 4x, kappa 11.9
-  weakest      layer1.1.bn3 (identity): INT8 30.8 dB, spread 11x, kappa 12.1
-  weakest      layer2.1.bn3 (identity): INT8 32.4 dB, spread 6x, kappa 9.5
+  weakest      layer3.1.bn3 (identity): INT8 30.4 dB (3.0 %), spread 4x, kappa 11.9
+  weakest      layer1.1.bn3 (identity): INT8 30.8 dB (2.9 %), spread 11x, kappa 12.1
+  weakest      layer2.1.bn3 (identity): INT8 32.4 dB (2.4 %), spread 6x, kappa 9.5
   flags        strong channel imbalance (up to 21x) under one per-tensor scale
   coverage     activations taken from the traced graph
-  scenarios    static SQNR_add with weights (higher = less noise at the head input) and the relative error
-               r = 10^(-SQNR/20) it corresponds to, with unit propagation factors (an estimate of the noise,
-               not of the accuracy loss):
-                 INT8, per-channel weights      15.8 dB   r ~  16.2 % of the signal
-                 INT8, per-tensor weights        7.4 dB   r ~  42.5 % of the signal
-                 FP8 E4M3                       11.5 dB   r ~  26.7 % of the signal
-                 FP16                           53.4 dB   r ~   0.2 % of the signal
+  scenarios    activations and weights together, with unit propagation factors: the expected deviation at
+               the head input if the network neither attenuates nor amplifies the noise (not the accuracy loss):
+                 INT8, per-channel weights      15.8 dB   (16.2 % of the signal)
+                 INT8, per-tensor weights        7.4 dB   (42.5 % of the signal)
+                 FP8 E4M3                       11.5 dB   (26.7 % of the signal)
+                 FP16                           53.4 dB   ( 0.2 % of the signal)
   references   static INT8 SQNR_add of this network: 19.0 dB. Measured networks of the article (static SQNR_add, measured relative INT8 loss with TensorRT):
                      frcnn_r50_fpn             20.6 dB     0.7%
                  --> resnet50                  19.0 dB
