@@ -201,7 +201,9 @@ tensors. It is only a check of the static analysis. ImageNetV2, 128 calibration 
 \* predicted from one measurement of the quantized head input (next section), not from the static analysis.
 
 The same comparison as a relative error in percent of the signal, r = 10^(−SQNR/20), as in Table C13 of the article.
-Static values need no images. Measured deviations need unlabelled images, and only the accuracy loss needs labels:
+Static values need no images. Measured deviations need unlabelled images, and only the accuracy loss needs labels.
+**These percentages are deviations of internal activations, not prediction errors.** Only the last column is a change
+of the final prediction, and it cannot be computed statically:
 
 | Network | Format | Per quantizer, static / measured | Whole network, static / measured | Head input, measured | Relative loss, measured |
 |---|---|---|---|---|---|
