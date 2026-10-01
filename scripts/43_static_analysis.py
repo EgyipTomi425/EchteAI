@@ -320,7 +320,8 @@ def scenarios(s, layers, acts):
         pred = pd.read_csv(ref / "prediction.csv").set_index("model")
         st = pd.read_csv(ref / "static_analysis.csv").set_index("model")
         for m in [m for m in pred.index if m in st.index and m != s["model"]]:
-            refs.append((m, float(st.loc[m, "static_sqnr_add_int8_db"]), float(100 * pred.loc[m, "int8_rel_loss"])))
+            refs.append((m, float(st.loc[m, "static_sqnr_add_int8_db"]), float(100 * pred.loc[m, "int8_rel_loss"]),
+                         float(st.loc[m, "scenario_fp8_db"]), float(100 * pred.loc[m, "fp8_rel_loss"])))
         refs.sort(key=lambda r: -r[1])
     return rows, refs
 
@@ -337,13 +338,26 @@ def report_scenarios(s, layers, acts):
         print(f"  references   static INT8 SQNR_add of this network: {v:.1f} dB. Measured networks of the article "
               f"(static SQNR_add, measured relative INT8 loss with TensorRT):")
         placed = False
-        for m, x, loss in refs:
+        for m, x, loss, _, _ in refs:
             if not placed and v >= x:
                 print(f"                 --> {s['model']:24s} {v:5.1f} dB")
                 placed = True
             print(f"                     {m:24s} {x:5.1f} dB   {loss:5.1f}%")
         if not placed:
             print(f"                 --> {s['model']:24s} {v:5.1f} dB")
+        v8 = dict(rows)["FP8 E4M3"]
+        print(f"               FP8 (static SQNR_add with weights {v8:.1f} dB; measured relative FP8 loss with TensorRT):")
+        placed = False
+        for m, _, _, x8, loss8 in sorted(refs, key=lambda r: -r[3]):
+            if not placed and v8 >= x8:
+                print(f"                 --> {s['model']:24s} {v8:5.1f} dB")
+                placed = True
+            print(f"                     {m:24s} {x8:5.1f} dB   {loss8:5.1f}%")
+        if not placed:
+            print(f"                 --> {s['model']:24s} {v8:5.1f} dB")
+        print("               All five stayed within about 1 % in FP8, unrelated to their static FP8 SQNR_add; a network that "
+              "amplifies")
+        print("               the noise can still lose more (MobileNetV2: 10 % in the simulated FP8 check, Gamma_bar 3.3).")
         print("               The static analysis ranks networks (Spearman 0.9 on the five) but does not see how a "
               "network propagates the noise;")
         print("               it gives no accuracy number (no % loss for INT8 or FP8). For the relative loss: one measurement "
