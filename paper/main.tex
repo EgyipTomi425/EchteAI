@@ -56,6 +56,7 @@
 \usepackage{algpseudocode}%
 \usepackage{listings}%
 \usepackage{placeins}%
+\usepackage{array}%
 %%%%
 
 %%%%%=============================================================================%%%%
@@ -136,7 +137,7 @@ In our conference paper we introduced the Precise, Explainable and Provable (PEP
 \item \emph{Static analysis:} a data-free analysis of the FP32 weights and batch-normalisation parameters that estimates the INT8 and FP8 noise of any network without executing it, validated on two networks not used elsewhere (Sections~\ref{sec:static} and~\ref{sec:res-static}).
 \item \emph{Decision:} a fleet cost model with a break-even penalty per quantization-induced error.
 \end{itemize}
-Proofs, implementation details and supplementary analyses are in Appendices~\ref{sec:supp-methods} and~\ref{sec:supp-results}, extended tables and figures in Appendix~\ref{secA1}.
+The step-by-step proofs, implementation details and supplementary analyses are given in the Supplementary Information (Appendices~\ref{sec:supp-methods} and~\ref{sec:supp-results}), and the extended tables and figures in its Appendix~\ref{secA1}.
 
 \section{Methods}\label{sec:methods}
 
@@ -204,12 +205,6 @@ Q_s(x)=s\cdot\operatorname{clip}\!\left(\lfloor x/s\rceil,-127,127\right),\label
 \end{equation}
 with one scale per output channel for weights and one scale $s=\alpha/127$ per tensor for activations. The clipping range $\alpha$ is set on the calibration images by entropy calibration~\cite{migacz2017tensorrt} (Eq.~\eqref{eq:entropy}) or, as an ablation, by the observed maximum. Small calibration sets can make the result depend on the sample~\cite{hubara2021accurate}, so we recalibrated every model on seeded random subsets of its calibration set and, as a control, with an order-independent implementation of entropy calibration (Supplementary Section~\ref{sec:supp-quant}). The FP8 variants~\cite{micikevicius2022fp8} use $s=\alpha/448$, with $\alpha$ set to the observed maximum (the toolchain default for FP8), and round to the nearest E4M3 number; they use the same calibration data and the same exclusions. FP16 was produced by automatic mixed precision~\cite{micikevicius2018mixed}. From one calibration we derive two INT8 graphs that share every scale: \emph{INT8}, in which operations without QDQ nodes run in FP16 (this is the deployed variant), and \emph{INT8 (FP32 fallback)}, which isolates the effect of quantization in the activation analysis. Decoding and post-processing stay in high precision. Quantizing the TopK of the YOLOv10 head would restrict the class scores to 127 levels, and quantizing the distribution-focal-loss (DFL) box decoder distorts large objects; we report both of these deployment artefacts as ablations (Fig.~\ref{fig:qdq}). INT4 was not evaluated, because the H200 has no INT4 tensor-core arithmetic and TensorRT supports INT4 only for the weights of matrix multiplications~\cite{nvidia2023h200,tensorrt2026quantized}.
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\textwidth]{figures/fig_qdq.pdf}
-\caption{Precision of the deployed INT8 engines. Precision of each architectural stage in the deployed INT8 engines (left) and the explicit quantize--dequantize pattern that TensorRT fuses into integer kernels (right). Pre-processing and the Faster R-CNN proposal and ROI heads are not part of the quantized engine.}\label{fig:qdq}
-\end{figure}
-
 All variants were compiled with TensorRT~11.3~\cite{tensorrt} into \emph{strongly typed} engines, in which the precision of every layer follows the graph. We disabled TF32, so that the FP32 baseline is true single precision. Static-shape engines were built for batch sizes 1, 6 and 8. For evaluation, Faster R-CNN uses a dynamic-shape engine (input sides 256--1344), while its proposal network and ROI heads run in FP32 PyTorch. We read back from the engine inspector the precision in which every convolution is actually executed. The environment is listed in Table~\ref{tab:hardware}, and implementation details are given in Supplementary Section~\ref{sec:supp-quant}.
 
 % BEGIN GENERATED M3_hardware
@@ -276,7 +271,7 @@ Under (A2), round-to-nearest in a floating-point format with $p$ significand bit
 \mathrm{SQNR}_\mathrm{FP}=20p\log_{10}2+10\log_{10}\left(8\ln2\right)\approx6.02\,p+7.44\,\mathrm{dB}.\label{eq:sqnr-fp}
 \end{equation}
 \end{lemma}
-For E4M3 ($p=4$), Eq.~\eqref{eq:sqnr-fp} gives 31.5\,dB, and for FP16 ($p=11$) 73.7\,dB. The two formats behave very differently: the relative precision of a floating-point format does not depend on the calibrated range~\cite{kuzmin2022fp8,vanbaalen2023fp8}, whereas INT8 loses 20\,dB per decade of $\kappa$. Eq.~\eqref{eq:mse} expresses the familiar trade-off between the granular noise of a wide range and the clipping of a narrow one~\cite{banner2019aciq,zhao2019ocs}. A Monte Carlo simulation reproduces Eqs.~\eqref{eq:mse}--\eqref{eq:sqnr-fp} within 0.1\,dB (Fig.~\ref{fig:noise}), and the proofs are given in Supplementary Section~\ref{sec:supp-noise}. Because TensorRT uses static scales, Lemma~\ref{lem:noise} also tells what happens when the signal level changes after calibration.
+The idea behind both results is simple. INT8 has a fixed grid with step $s=\alpha/127$, and a rounding error that is uniform over one step has the mean square $s^2/12$; dividing the signal power $\sigma^2$ by it leaves only the ratio $\kappa=\alpha/\sigma$. A floating-point grid, by contrast, is spaced in proportion to the value itself, so the relative error is the same for small and large values and $\kappa$ drops out; averaging over where a value falls within its octave gives the constant $8\ln2$. For E4M3 ($p=4$), Eq.~\eqref{eq:sqnr-fp} gives 31.5\,dB, and for FP16 ($p=11$) 73.7\,dB. The two formats behave very differently: the relative precision of a floating-point format does not depend on the calibrated range~\cite{kuzmin2022fp8,vanbaalen2023fp8}, whereas INT8 loses 20\,dB per decade of $\kappa$. Eq.~\eqref{eq:mse} expresses the familiar trade-off between the granular noise of a wide range and the clipping of a narrow one~\cite{banner2019aciq,zhao2019ocs}. A Monte Carlo simulation reproduces Eqs.~\eqref{eq:mse}--\eqref{eq:sqnr-fp} within 0.1\,dB (Fig.~\ref{fig:noise}), and the proofs are given in Supplementary Section~\ref{sec:supp-noise}. Because TensorRT uses static scales, Lemma~\ref{lem:noise} also tells what happens when the signal level changes after calibration.
 \begin{corollary}[Static scales]\label{cor:static}
 Let the scale $s$ be calibrated for an activation with root-mean-square value $\sigma_\mathrm{cal}$, and let the activation at inference be $c$ times larger in distribution, $c>0$. If no value is clipped and (A1), (A2) hold, then
 \begin{equation}
@@ -332,12 +327,6 @@ Proposition~\ref{prop:fixedpoint} puts the attenuation effect of the conference 
 \end{equation}
 where $\mathrm{SQNR}_h$ is the measured head-input SQNR. By Proposition~\ref{prop:selective}, $\bar\Gamma=\sum_n\Gamma_{n\to h}\rho_n^2/\sum_n\rho_n^2$ is the mean propagation factor, weighted by the injected noise. It is below one for a network that attenuates the injected noise and above one for a network that amplifies it (Fig.~\ref{fig:propmodel}).
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.85\textwidth]{figures/fig_propagation_model.pdf}
-\caption{Error propagation model. Model of the conference paper (Eq.~\ref{eq:attenuation}) and the per-node amplification ratio used to estimate the attenuation operator $\mathcal{A}$ from measured activations.}\label{fig:propmodel}
-\end{figure}
-
 \subsection{Deviation--risk analysis}\label{sec:risk}
 
 We run both engines on all 5\,000 validation images with the head-input tensors exposed and compare them at a score threshold of 0.5. As in the conference paper, an image contains a \emph{detection error} if INT8 misses a ground-truth object that FP32 found, or if an FP32 detection has no INT8 counterpart of the same class with IoU $\geq0.5$. A \emph{score-tolerant} variant accepts INT8 counterparts down to a score of 0.3; an FP32 detection that still has no counterpart has then genuinely vanished. At the image level, we compare the ROC AUC of the head-input $\mathrm{MRE}_\mathrm{proj}$ with that of a trivial covariate, the number of FP32 detections. For the local deviation defined below, we derive an architecture-specific threshold from the data as the cut that maximises Youden's index $J=\mathrm{TPR}-\mathrm{FPR}$ for vanishing detections. At the detection level, the \emph{local deviation} $d_j$ of detection $j$ is the median $\mathrm{MRE}_\mathrm{proj}$ of the head-input maps inside its box, and it enters the logistic model
@@ -357,8 +346,6 @@ Sustained runs average out the partial sampling of the built-in power sensor~\ci
 \subsection{Robustness under adverse imaging conditions}\label{sec:robustness}
 
 Fog, snow, frost, brightness (glare), contrast, Gaussian sensor noise and motion blur follow the COCO-C protocol~\cite{michaelis2019benchmarking,hendrycks2019benchmarking} at severities 1--5 with fixed per-image seeds. Low light, which COCO-C does not include, is simulated by gamma darkening with Poisson shot noise (Fig.~\ref{fig:conditions}). For every condition, severity and precision we report box mAP, head-input deviation and detection-error rate on the 500 analysis images. For the YOLOv10 detectors we also tried two label-free remedies: a robust calibration set in which half of the images carry a random condition, and keeping the input or the top-ranked convolution in FP16.
-
-\pepfigure{M_conditions}{Adverse imaging conditions. The eight adverse imaging conditions applied to a COCO val2017 traffic scene (image 336232) at severity 3 of 5. Low light is gamma darkening with Poisson shot noise; the other conditions follow the COCO-C protocol.}{fig:conditions}
 
 \subsection{PEP-AI-guided diagnosis and repair}\label{sec:selective}
 
@@ -459,7 +446,7 @@ The additive model ties these observations to the fidelity of the network as a w
 
 \pepfigure{R1_activation_maps}{FP32 and INT8 activation maps of Faster R-CNN. Channel-wise maximum activations of the Faster R-CNN backbone and FPN, averaged over all convolutions, for FP32 and INT8 on a shared colour scale, with the absolute and relative deviation. Grey contours: ground-truth boxes.}{fig:maps}
 
-\pepfigure{R2_hexbin}{Density of INT8 deviation versus FP32 activation. Aggregated density of FP32 activation versus INT8 deviation on symmetric-logarithmic axes (128 random elements per tensor and image, 500 images per model).}{fig:hexbin}
+\pepfigure{R2_hexbin}{Density of INT8 deviation versus FP32 activation on symmetric-logarithmic axes (128 random elements per tensor and image, 500 images per model).}{fig:hexbin}
 
 \pepfigure{R4_propagation}{Layer-wise propagation of quantization deviation. SQNR (top) and median relative error of the channel-max projection (bottom) of every convolution, ordered by depth, for INT8 (median over 500 images, band: interquartile range), FP8 (100 images) and FP16 (500 images; Faster R-CNN 100). Grey lines and labels: network stages.}{fig:propagation}
 
@@ -497,7 +484,7 @@ For DenseNet-121, the label-free analysis points to a placement error. Keeping i
 
 Selective precision repairs damage that is concentrated in a few layers (Fig.~\ref{fig:selective}, Table~\ref{tab:selective}). In EfficientNet-B0, keeping just the first depthwise convolution in FP16 raises the top-1 accuracy from 24.8\% to 43.9\%. The iterative ranking reaches 62.3\% with 8 and 66.0\% with 20 of the 82 convolutions in FP16, against 45.8\% and 57.2\% for the one-shot ranking and 34.5--45.7\% for random subsets of 20. The architectural heuristic from the literature, all 16 depthwise convolutions in FP16~\cite{sheng2018quantization,nagel2019datafree}, reaches 65.0\%, as much as the iterative ranking with 17 convolutions. It does so, however, at the highest latency and energy of all variants (0.95\,ms and 31.0\,mJ per image at batch size 8, against 0.72\,ms and 23.3\,mJ for the iterative ranking at 62.3\%). The large gap between one-shot and iterative ranking reflects how far this network departs from the additive model ($\bar\Gamma=2.89$). Along the depth (Fig.~\ref{fig:energysurface}), eight FP16 convolutions lower the deviation in the first quarter of the network from 12.8\% to 0.9\%, but every variant above 54\% top-1 is slower than pure FP16. YOLOv10-X recovers 5.1 of its 6.2 lost points with 20 ranked convolutions and remains faster than FP16. The convolutions ranked 13 to 20 are the ones that restore its duplicate suppression (15.8\% duplicates with 12 and 0.4\% with 20 FP16 convolutions; Table~\ref{tab:duplicates}). YOLOv10-S, which spreads its noise over 79 quantizers of similar strength ($\bar\Gamma=0.28$), gains nothing (43.8--44.0 mAP). A ranking predicted from FP32 statistics alone does not work (EfficientNet-B0 reaches 34.9\% with 20 layers): the injected noise is predictable, but its propagation $\Gamma_{n\to h}$ has to be measured.
 
-\pepfigure{R3_energy_surface}{Deviation, depth and energy of selective-precision variants of EfficientNet-B0. Deviation, depth and energy of the selective-precision variants of EfficientNet-B0: median $\mathrm{MRE}_\mathrm{proj}$ of every convolution (64 calibration images) against its relative depth and the measured GPU energy per image of the variant (batch size 8; shorter protocol without CUDA graphs, comparable only between variants), for the fully quantized engine and the variants of the iterative ranking ($k=1$--20 convolutions in FP16; 64 analysis images per variant). Logarithmic vertical axis and colour scale; depth in 16 bins. Top-1 accuracy of the variants: Table~\ref{tab:selective}.}{fig:energysurface}
+\pepfigure{R3_energy_surface}{Deviation, depth and energy of selective-precision variants of EfficientNet-B0. Median $\mathrm{MRE}_\mathrm{proj}$ of every convolution against its relative depth (16 bins) and the GPU energy per image of the variant, for the fully quantized engine and the iterative ranking with $k=1$--20 convolutions in FP16 (64 images each; batch size 8, shorter protocol without CUDA graphs, comparable only between variants). Logarithmic vertical axis and colour scale; top-1 accuracy in Table~\ref{tab:selective}.}{fig:energysurface}
 
 \subsection{Fleet-level energy, cost and emissions}\label{sec:res-aibo}
 Our example fleet has 1\,000 vehicles with six cameras at 10\,Hz, which amounts to $1.26\times10^{12}$ images per year. At the fleet batch size of 6, INT8 needs 70--91\% less energy per image than FP32 and 36--50\% less than FP16. With strict FP32, the Faster R-CNN backbone would consume 1\,136\,MWh per year and YOLOv10-X 885\,MWh. INT8 brings this down to 99 and 104\,MWh, which at the reference price and grid intensity saves 191\,kEUR and 251\,t CO$_2$ per year for Faster R-CNN and 144\,kEUR and 189\,t for YOLOv10-X (Faster R-CNN: 104--311\,kEUR and 104--415\,t over the price and grid ranges; Fig.~\ref{fig:aibo-results}, Table~\ref{tab:aibo}). FP16 already captures most of this saving; INT8 adds another 62 and 105\,MWh per year on top of it. Counting only the energy above idle lowers all savings by about a fifth (Supplementary Section~\ref{sec:supp-res-aibo}).
@@ -563,7 +550,6 @@ The analysis so far can be condensed into a procedure that is applied to a new n
 
 \emph{Mathematical status.} It is worth being explicit about what is proved and what is not. Lemma~\ref{lem:noise}, Corollary~\ref{cor:static} and Propositions~\ref{prop:selective} and~\ref{prop:fixedpoint} are derived under the stated assumptions, with proofs in Supplementary Sections~\ref{sec:supp-noise} and~\ref{sec:supp-prop}. Their constants were checked numerically: $10\log_{10}(12\cdot127^2)=52.87$\,dB, $10\log_{10}(8\ln2)=7.44$\,dB, and a Monte Carlo simulation of E4M3 rounding gives 31.53\,dB against the predicted 31.52\,dB. $\bar\Gamma$ is a definition, and the decomposition over $N$ is an identity. The relation between head-input SQNR and relative loss, by contrast, is empirical. An ordinary least-squares fit of $\log_{10}$ of the relative loss on the head-input SQNR of the five networks gives a slope of $-0.082$ per dB (95\% confidence interval $-0.111$ to $-0.053$, $p=0.003$), i.e.\ a relative loss proportional to $r_h^{1.64}$, with an exponent between 1.05 and 2.23. Two limiting cases bracket this exponent. Suppose a decision flips when the perturbation of its score exceeds its margin, and the margins have a finite density at zero; then the share of flipped decisions grows linearly with the perturbation amplitude (exponent~1). For a metric that is smooth at the FP32 operating point, where its first derivative vanishes, the loss grows quadratically instead (exponent~2). The measured exponent lies between the two, which is consistent with a mixture of threshold flips and changes of the ranking that enters the average precision. We have not derived this interpretation, and the fit rests on five networks and two accuracy metrics.
 
-
 \subsection{Static analysis and its validation on unseen networks}\label{sec:res-static}
 The static analysis of Section~\ref{sec:static} takes 20--35\,s per network on a CPU and needs no image (Table~\ref{tab:static}). On the five networks of this article, its INT8 $\mathrm{SQNR}_\text{add}$ orders the measured relative INT8 loss with one exchange (Spearman $\rho=0.9$, exact one-sided $p=0.04$), just like the FP32-statistics screening of Section~\ref{sec:worked}. Its absolute values, however, are 8--12.5\,dB higher than those obtained with the calibration of the toolchain (20.6 against 12.5\,dB for Faster R-CNN, 14.9 against 2.6\,dB for YOLOv10-X). The toolchain quantizes more tensors, sets its ranges by entropy calibration and meets heavier tails than the Gaussian model assumes. We also applied the analysis to two networks that are not used elsewhere in this article, MobileNetV2 and ResNet-50, and to the two classifiers of the article. To validate it, we executed these networks on ImageNetV2 with simulated quantization on the CPU, placed at exactly the modelled tensors (Table~\ref{tab:staticval}; \texttt{44\_validate\_static.py}). Each tensor has one symmetric per-tensor scale, set on 128 calibration images to the MSE-optimal range for INT8 and to the maximum for FP8; weights are quantized per output channel, and 2\,000 disjoint images are used for evaluation. The validation run is only a check, and the analysis itself executes nothing. Since placement and calibration differ from the TensorRT toolchain, the check tests the method, not the deployment numbers of a particular runtime.
 
@@ -583,7 +569,7 @@ All measurements were taken on a data-centre GPU. The relative effects follow fr
 
 \subsection{Practical applicability}
 
-PEP-AI quantifies where a quantized model deviates, whether the deviation predicts detection errors and how it changes under adverse conditions, each with an uncertainty, which is what the safety argument for a perception component requires~\cite{iso21448,iso8800}. Even before any engine is built, the static analysis of Section~\ref{sec:static} gives the FP8 noise within 0.14\,dB, and the INT8 noise within about 1\,dB for bounded and 4--6\,dB for unbounded activations. The procedure of Section~\ref{sec:worked} then tells which networks need attention: FP32 statistics screen them, and one measurement of the quantized head input predicts the relative INT8 loss within a factor of about two. From the measurements we can give a recommendation for each architecture (Table~\ref{tab:deployment}). Faster R-CNN can be deployed in INT8 as it is. YOLOv10-X needs its duplicate suppression restored, either by a class-wise NMS for 0.16\,ms per image or by selective precision. For YOLOv10-S, whose loss is spread over the whole network, only a different range setting or FP8 helps. DenseNet-121 recovers its accuracy with batch normalisation in FP16, but at nearly the cost of FP16, and EfficientNet-B0 is best served by FP16. For networks with a large propagation factor, INT8 accuracy should be checked over several calibration orders and procedures and confirmed on labelled data. Where FP8 tensor cores are available, FP8 is the most robust choice for the networks that INT8 damages: it is nearly lossless, insensitive to the range setting and to contrast loss (Lemma~\ref{lem:noise}), and, depending on kernel fusion, faster than FP16. At fleet scale this choice is worth up to 1\,GWh, 191\,kEUR and 251\,t CO$_2$ per year for 1\,000 vehicles, and the break-even analysis tells an operator how much residual risk per frame the saving can pay for~\cite{sudhakar2023datacenters,ec2019greendeal}.
+PEP-AI quantifies where a quantized model deviates, whether the deviation predicts detection errors and how it changes under adverse conditions, each with an uncertainty, which is what the safety argument for a perception component requires~\cite{iso21448,iso8800}. Even before any engine is built, the static analysis estimates the noise a network will receive (Sections~\ref{sec:static} and~\ref{sec:res-static}), and the procedure of Section~\ref{sec:worked} then tells which networks need attention and how much accuracy INT8 will cost them. From the measurements we can give a recommendation for each architecture (Table~\ref{tab:deployment}). Faster R-CNN can be deployed in INT8 as it is. YOLOv10-X needs its duplicate suppression restored, either by a class-wise NMS for 0.16\,ms per image or by selective precision. For YOLOv10-S, whose loss is spread over the whole network, only a different range setting or FP8 helps. DenseNet-121 recovers its accuracy with batch normalisation in FP16, but at nearly the cost of FP16, and EfficientNet-B0 is best served by FP16. For networks with a large propagation factor, INT8 accuracy should be checked over several calibration orders and procedures and confirmed on labelled data. Where FP8 tensor cores are available, FP8 is the most robust choice for the networks that INT8 damages: it is nearly lossless, insensitive to the range setting and to contrast loss (Lemma~\ref{lem:noise}), and, depending on kernel fusion, faster than FP16. At fleet scale this choice is worth up to 1\,GWh, 191\,kEUR and 251\,t CO$_2$ per year for 1\,000 vehicles, and the break-even analysis tells an operator how much residual risk per frame the saving can pay for~\cite{sudhakar2023datacenters,ec2019greendeal}.
 
 \subsection{Future research directions}
 
@@ -614,6 +600,14 @@ This research was carried out at the Doctoral School of Informatics of the Unive
 \item Prior publication: This article extends the conference paper~\cite{menyhart2026citds}. New in this version are the GPU deployment with strict-FP32, FP16, INT8 and FP8 TensorRT engines for five architectures, the complete-benchmark accuracy with confidence intervals, the latency, jitter, memory-traffic and energy measurements, the analytical noise and propagation model with its experimental tests, the operator-level amplification estimates, the statistical deviation--risk analysis, the robustness study, label-free diagnosis and repair including selective precision, the prediction procedure for INT8 tolerance, the static analysis with its validation on further networks, and the AIBO fleet scenario. Text reused from the conference paper is limited to the definition of the original metrics.
 \end{itemize}
 
+\FloatBarrier
+\bibliography{sn-bibliography}
+
+\clearpage
+\label{supp:start}%
+\noindent{\large\textbf{Supplementary Information}}\\[2pt]
+\noindent PEP-AI Validated Quantization for Energy-Efficient Perception in Intelligent Transportation Systems. T.~Menyh\'art, A.~Hajdu, R.~Lakatos. Appendices A--C of the article. Cross-references to sections, equations, figures and tables of the main text, and citations, refer to the main article and its reference list.
+\par\bigskip
 \begin{appendices}
 
 \section{Supplementary methods}\label{sec:supp-methods}
@@ -631,15 +625,39 @@ where $\ell$ runs over the fused layers, $|t|$ is the number of elements of a te
 
 \subsection{Quantization noise model}\label{sec:supp-noise}
 \begin{proof}[Proof of Lemma~\ref{lem:noise}]
-Inside the range, (A1) gives $\mathbb{E}[e^2\mid|x|\le\alpha]=s^2/12$. Outside, the quantizer saturates at $\pm127s=\pm\alpha$, so that $e=\operatorname{sign}(x)\,\alpha-x$, which gives the second term of Eq.~\eqref{eq:mse}. Without clipping, $\mathrm{SQNR}=\sigma^2/(s^2/12)=12\cdot127^2/\kappa^2$, which is Eq.~\eqref{eq:sqnr-int8}. For the floating-point format write $|x|=m\,2^E$ with $m\in[1,2)$. In the normal range the representable numbers in $[2^E,2^{E+1})$ are spaced by $2^{E-p+1}$, and round-to-nearest leaves an error that is uniform over one spacing, so that $\mathbb{E}[e^2\mid x]=2^{2(E-p+1)}/12=x^2\,2^{-2p}/(3m^2)$. Averaging over the power-weighted measure, under which $m$ has the density $1/(m\ln2)$ on $[1,2)$ by (A2),
+\emph{INT8, inside the range.} By (A1) the rounding error $u=e$ is uniform on $[-s/2,s/2]$, so its mean square is
 \begin{equation*}
-\mathbb{E}\,e^2=\mathbb{E}\,x^2\cdot\frac{2^{-2p}}{3}\int_1^2\frac{\mathrm{d}m}{m^3\ln2}=\mathbb{E}\,x^2\cdot\frac{2^{-2p}}{3}\cdot\frac{3}{8\ln2}=\mathbb{E}\,x^2\,\frac{2^{-2p}}{8\ln2},
+\mathbb{E}\,u^2=\frac{1}{s}\int_{-s/2}^{s/2}u^2\,\mathrm{d}u=\frac{1}{s}\cdot\frac{2}{3}\left(\frac{s}{2}\right)^3=\frac{s^2}{12}.
 \end{equation*}
-and $10\log_{10}\left(8\ln2\cdot2^{2p}\right)=20p\log_{10}2+10\log_{10}(8\ln2)$, which is Eq.~\eqref{eq:sqnr-fp}.
+This applies to the share $\Pr(|x|\le\alpha)$ of the values that lie inside the range, which gives the first term of Eq.~\eqref{eq:mse}.
+
+\emph{INT8, outside the range.} A value with $|x|>\alpha$ is clipped to the largest level $\pm127s=\pm\alpha$, so its error is $e=\operatorname{sign}(x)\,\alpha-x$ and $e^2=(|x|-\alpha)^2$. Taking the expectation over these values gives the second term of Eq.~\eqref{eq:mse}.
+
+\emph{INT8 without clipping.} If no value is clipped, only the first term remains and $\mathbb{E}\,e^2=s^2/12$. With $s=\alpha/127$ and $\alpha=\kappa\sigma$,
+\begin{equation*}
+\mathrm{SQNR}=\frac{\mathbb{E}\,x^2}{\mathbb{E}\,e^2}=\frac{12\,\sigma^2}{s^2}=\frac{12\,\sigma^2\cdot127^2}{\kappa^2\sigma^2}=\frac{12\cdot127^2}{\kappa^2},
+\end{equation*}
+and in decibels $10\log_{10}(12\cdot127^2)-20\log_{10}\kappa=10\log_{10}193\,548-20\log_{10}\kappa=52.87\,\mathrm{dB}-20\log_{10}\kappa$, which is Eq.~\eqref{eq:sqnr-int8}. The signal $\sigma$ cancels: only the ratio $\kappa$ of range to signal matters.
+
+\emph{Floating point.} Write $|x|=m\,2^E$ with significand $m\in[1,2)$ and integer exponent $E$. A format with $p$ significand bits (including the implicit leading one) has $2^{p-1}$ representable numbers in each octave $[2^E,2^{E+1})$, spaced by $\Delta=2^{E-p+1}$; for E4M3 ($p=4$) these are 8 numbers per octave. Round-to-nearest leaves an error that is uniform over one spacing, so by the same integral as above
+\begin{equation*}
+\mathbb{E}[e^2\mid x]=\frac{\Delta^2}{12}=\frac{2^{2E-2p+2}}{12}=\frac{x^2}{m^2}\cdot\frac{2^{-2p+2}}{12}=x^2\,\frac{2^{-2p}}{3m^2},
+\end{equation*}
+where we used $2^E=|x|/m$. The relative error power $2^{-2p}/(3m^2)$ depends only on where $x$ lies within its octave, not on the size of $x$. Averaging over all values, each weighted by its power $x^2$,
+\begin{equation*}
+\mathbb{E}\,e^2=\mathbb{E}\!\left[x^2\,\frac{2^{-2p}}{3m^2}\right]=\mathbb{E}\,x^2\cdot\frac{2^{-2p}}{3}\cdot\mathbb{E}_w\!\left[m^{-2}\right],
+\end{equation*}
+where $\mathbb{E}_w$ is the expectation under the power-weighted measure. By (A2), $m$ then has the log-uniform density $1/(m\ln2)$ on $[1,2)$, and
+\begin{equation*}
+\mathbb{E}_w\!\left[m^{-2}\right]=\int_1^2\frac{1}{m^2}\cdot\frac{\mathrm{d}m}{m\ln2}=\frac{1}{\ln2}\left[-\frac{1}{2m^2}\right]_1^2=\frac{1}{\ln2}\left(\frac12-\frac18\right)=\frac{3}{8\ln2}.
+\end{equation*}
+Hence $\mathbb{E}\,e^2=\mathbb{E}\,x^2\,2^{-2p}/(8\ln2)$, so that $\mathrm{SQNR}=8\ln2\cdot2^{2p}$, and in decibels $20p\log_{10}2+10\log_{10}(8\ln2)=6.02\,p+7.44\,\mathrm{dB}$, which is Eq.~\eqref{eq:sqnr-fp}. For E4M3, $6.02\cdot4+7.44=31.52$\,dB; for FP16, $6.02\cdot11+7.44=73.67$\,dB. No $\kappa$ or $\sigma$ appears: the floating-point grid scales with the value itself.
 \end{proof}
 
 \begin{proof}[Proof of Corollary~\ref{cor:static}]
-For INT8 the scale, and with it the granular noise power $s^2/12$ of Eq.~\eqref{eq:mse}, is fixed, whereas the signal power scales with $c^2$; without clipping the SQNR therefore changes by $10\log_{10}c^2$. The log-uniform distribution of (A2) is invariant under scaling, so the significand distribution of $c\,x$ equals that of $x$, and by Lemma~\ref{lem:noise} the SQNR of the floating-point format is unchanged as long as the scaled activations remain in its normal range, i.e.\ above $2^{-6}s$ for E4M3.
+\emph{INT8.} The scale $s$ was fixed during calibration, so the noise power $s^2/12$ does not change, whereas the signal power changes from $\sigma_\mathrm{cal}^2$ to $c^2\sigma_\mathrm{cal}^2$. Without clipping, $\mathrm{SQNR}=12\,c^2\sigma_\mathrm{cal}^2/s^2$, which is the calibrated value multiplied by $c^2$, i.e.\ a change of $10\log_{10}c^2=20\log_{10}c$\,dB: halving the signal ($c=1/2$) costs 6\,dB.
+
+\emph{FP8.} Multiplying $x$ by $c=m_c\,2^k$ shifts $\log_2|x|$ by $\log_2 c$. A log-uniform significand means that the fractional part of $\log_2|x|$ is uniform, and a uniform distribution on a circle stays uniform under any shift. The significand of $c\,x$ therefore has the same distribution as that of $x$, and by Lemma~\ref{lem:noise} the SQNR is unchanged, as long as the scaled values stay in the normal range of the format, i.e.\ above $2^{-6}s$ for E4M3.
 \end{proof}
 
 The calibration trade-off of Eq.~\eqref{eq:mse} is shown in Fig.~\ref{fig:noise}a. A small $\alpha$ lowers the granular noise of the bulk of the distribution but clips its tail; heavier tails move the optimum to larger $\kappa$. Max calibration sets $\kappa$ to the extent of the tail and pays 20\,dB per decade of $\kappa$; entropy calibration clips the tail, which favours the bulk but distorts exactly the rare, large activations.
@@ -654,11 +672,36 @@ g_\mathrm{BN}^2=\frac{1}{C}\sum_{c}\frac{\gamma_c^2}{v_c+\epsilon}\cdot\frac{\su
 which exceeds one whenever $\mu_c^2/v_c$ is large, as for the non-negative concatenated features that enter every pre-activation batch normalisation of DenseNet. Equation~\eqref{eq:bn} depends only on the FP32 parameters and is compared with the measurement in Section~\ref{sec:res-activations}.
 
 \begin{proof}[Proof of Proposition~\ref{prop:selective}]
-By Eq.~\eqref{eq:linear}, $e_h=\sum_n J_{n\to h}\delta_n$. Taking the expectation of $\lVert e_h\rVert^2$ removes all cross terms by the non-correlation assumption, and dividing by $\lVert x_h\rVert^2$ gives Eq.~\eqref{eq:additive}. Because the Jacobians are evaluated at the FP32 operating point, the factors $\Gamma_{n\to h}$ do not depend on which other nodes are quantized; keeping the nodes of $S$ in FP16 only removes their terms (up to the negligible FP16 noise), so that $r_h^2(S)$ is a sum of non-negative per-node terms, and over all sets of size $k$ it is minimised by removing the $k$ largest terms.
+\emph{Additive decomposition.} Eq.~\eqref{eq:linear} is linear in the injected noises. Applying it node by node from the input to the head, every injected noise $\delta_n$ reaches the head through the product of the Jacobians along the paths from $n$ to $h$, summed over all paths; call this $J_{n\to h}$. Hence
+\begin{equation*}
+e_h=\sum_n J_{n\to h}\,\delta_n,\qquad
+\mathbb{E}\lVert e_h\rVert^2=\sum_n\sum_m\mathbb{E}\big\langle J_{n\to h}\delta_n,\,J_{m\to h}\delta_m\big\rangle=\sum_n\mathbb{E}\lVert J_{n\to h}\delta_n\rVert^2,
+\end{equation*}
+because for $n\neq m$ the noises are zero-mean and uncorrelated, so the cross terms vanish. Dividing by $\lVert x_h\rVert^2$ and multiplying and dividing each term by $\mathbb{E}\lVert\delta_n\rVert^2$ and $\lVert x_n\rVert^2$,
+\begin{equation*}
+r_h^2=\sum_n\underbrace{\frac{\mathbb{E}\lVert J_{n\to h}\delta_n\rVert^2}{\mathbb{E}\lVert\delta_n\rVert^2}\cdot\frac{\lVert x_n\rVert^2}{\lVert x_h\rVert^2}}_{\Gamma_{n\to h}}\cdot\underbrace{\frac{\mathbb{E}\lVert\delta_n\rVert^2}{\lVert x_n\rVert^2}}_{\rho_n^2},
+\end{equation*}
+which is Eq.~\eqref{eq:additive}. $\Gamma_{n\to h}$ says how strongly the network amplifies ($>1$) or attenuates ($<1$) the noise of node $n$ on its way to the head, relative to the signal.
+
+\emph{Selection.} The Jacobians are evaluated at the FP32 operating point, so $\Gamma_{n\to h}$ does not depend on which other nodes are quantized. Keeping a set $S$ in FP16 sets $\rho_n\approx0$ for $n\in S$ (the FP16 noise is about 40\,dB below the INT8 noise by Lemma~\ref{lem:noise}) and removes exactly these terms from the sum. All terms are non-negative, so the remaining sum is smallest when the removed terms are the $k$ largest ones: replacing any removed term by a larger one that was kept can only lower $r_h^2(S)$.
 \end{proof}
 
 \begin{proof}[Proof of Proposition~\ref{prop:fixedpoint}]
-Eq.~\eqref{eq:unrolled} follows from Eq.~\eqref{eq:recursion} by induction on $n$. With $g_m\le\bar g$ and $\rho_m\le\bar\rho$, every product is bounded by a power of $\bar g^2$, and the sum by the geometric series $\bar\rho^2\sum_{j=0}^{n-1}\bar g^{2j}=\bar\rho^2(1-\bar g^{2n})/(1-\bar g^2)$. The resulting bound equals the convex combination $w\,r_0^2+(1-w)\,\bar\rho^2/(1-\bar g^2)$ with $w=\bar g^{2n}\in[0,1)$ and is therefore at most the larger of the two terms. For constant parameters the recursion $r_n^2=g^2r_{n-1}^2+\rho^2$ is a contraction with the unique fixed point $\rho^2/(1-g^2)$, and $r_n^2\to r_\infty^2$ geometrically with rate $g^2$. The last statement follows from $r_n^2\ge g^{2n}r_0^2$.
+\emph{Unrolled form.} For $n=1$, Eq.~\eqref{eq:recursion} gives $r_1^2=g_1^2r_0^2+\rho_1^2$, which is Eq.~\eqref{eq:unrolled}. If Eq.~\eqref{eq:unrolled} holds for $n$, then
+\begin{equation*}
+r_{n+1}^2=g_{n+1}^2r_n^2+\rho_{n+1}^2=r_0^2\prod_{m=1}^{n+1}g_m^2+\sum_{k=1}^{n}\rho_k^2\prod_{m=k+1}^{n+1}g_m^2+\rho_{n+1}^2,
+\end{equation*}
+and the last term is the $k=n+1$ term of the sum (with an empty product), so the formula holds for $n+1$.
+
+\emph{Bound.} With $g_m\le\bar g$ and $\rho_m\le\bar\rho$, each product of $j$ gains is at most $\bar g^{2j}$, so
+\begin{equation*}
+r_n^2\le\bar g^{2n}r_0^2+\bar\rho^2\sum_{j=0}^{n-1}\bar g^{2j}=\bar g^{2n}r_0^2+\bar\rho^2\,\frac{1-\bar g^{2n}}{1-\bar g^2}=w\,r_0^2+(1-w)\,\frac{\bar\rho^2}{1-\bar g^2},\qquad w=\bar g^{2n}.
+\end{equation*}
+Since $0\le w<1$, this is a weighted average of $r_0^2$ and $\bar\rho^2/(1-\bar g^2)$ and therefore never exceeds the larger of the two, at any depth $n$.
+
+\emph{Fixed point.} For constant $g<1$ and $\rho$, a stationary value must satisfy $r^2=g^2r^2+\rho^2$, i.e.\ $r_\infty^2=\rho^2/(1-g^2)$. The distance to it shrinks by $g^2$ per layer, $r_n^2-r_\infty^2=g^2\,(r_{n-1}^2-r_\infty^2)=g^{2n}(r_0^2-r_\infty^2)\to0$. In decibels, $\mathrm{SQNR}_\infty=-10\log_{10}r_\infty^2=-20\log_{10}\rho+10\log_{10}(1-g^2)$, which is Eq.~\eqref{eq:fixedpoint}. For example, $\rho$ corresponding to 30\,dB and $g=0.9$ give $30+10\log_{10}0.19=30-7.2=22.8$\,dB.
+
+\emph{Growth.} If $g_m\ge g>1$, all terms of Eq.~\eqref{eq:unrolled} are non-negative, so $r_n^2\ge r_0^2\prod_m g_m^2\ge g^{2n}r_0^2$.
 \end{proof}
 
 A consequence of the additive model concerns the spatial structure of the deviation. A per-tensor quantizer adds noise of the same power at every position, so that before any non-linearity the expected absolute error does not depend on the position while the relative error scales as $1/|f(x)|$; for an object region $O$ and the background $B$,
@@ -775,6 +818,21 @@ Operation & Energy (pJ) \\
 \end{table}
 % END GENERATED M5_energy_reference
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_qdq.pdf}
+\caption{Precision of the deployed INT8 engines. Precision of each architectural stage (left) and the explicit quantize--dequantize pattern that TensorRT fuses into integer kernels (right). Pre-processing and the Faster R-CNN proposal and ROI heads are not part of the quantized engine.}\label{fig:qdq}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/fig_propagation_model.pdf}
+\caption{Error propagation model of the conference paper (Eq.~\ref{eq:attenuation}) and the per-node amplification ratio used to estimate the attenuation operator $\mathcal{A}$ from measured activations.}\label{fig:propmodel}
+\end{figure}
+
+\pepfigure{M_conditions}{Adverse imaging conditions. The eight conditions applied to a COCO val2017 traffic scene (image 336232) at severity 3 of 5. Low light is gamma darkening with Poisson shot noise; the other conditions follow the COCO-C protocol.}{fig:conditions}
+
+
 % BEGIN GENERATED R_placement
 \begin{sidewaystable}
 \footnotesize\setlength{\tabcolsep}{4pt}
@@ -879,8 +937,8 @@ YOLOv10-X & FP16 & person & 7\,624 & 0.05 & 0.27 & 0.28 & 0.53 & 0.0 \\
 % END GENERATED X_localization
 
 % BEGIN GENERATED X_operating_point
-\begin{sidewaystable}
-\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{table}[h]
+\footnotesize\setlength{\tabcolsep}{2.5pt}
 \caption{Detection quality for road users (COCO val2017, 5\,000 images)}\label{tab:operating}
 \begin{tabular}{@{}llrrrrrrrr@{}}
 \toprule
@@ -905,7 +963,7 @@ YOLOv10-X & FP32 & 86.4 & 75.7 & 65.1 & 54.1 & 62.9 & 81.8 & 91.4 & 93.6 \\
 \botrule
 \end{tabular}
 \footnotetext{AP$_{50}$: average precision at IoU 0.5; AP: COCO AP@[.5:.95] of the class. Recall and precision: all road-user classes (person, bicycle, car, motorcycle, bus, truck) at the operating threshold (score $\geq0.5$) and IoU $\geq0.5$, with the greedy score-ordered matching of COCOeval; $\geq32^2$\,px: COCO medium and large objects. Precision is a lower bound, because COCO does not annotate every visible object.}
-\end{sidewaystable}
+\end{table}
 % END GENERATED X_operating_point
 
 % BEGIN GENERATED X_duplicates
@@ -1074,10 +1132,10 @@ DenseNet-121 & INT8 & $+$6.2 & 6.1 & 0.36 & 14.1 & 9.2 & 14.2 & 0.32 & 59.5 & 2.
 \end{sidewaystable}
 % END GENERATED X_static_validation
 
-\begin{sidewaystable}
-\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{table}[h]
+\footnotesize\setlength{\tabcolsep}{3pt}
 \caption{Network properties and their effect on the quantization noise}\label{tab:factors}
-\begin{tabular}{@{}p{3.2cm}p{5.0cm}p{3.8cm}p{5.6cm}@{}}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}p{3.5cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{3.6cm}@{}}
 \toprule
 Property & Effect on the head-input SQNR & Formula & Example in this article \\
 \midrule
@@ -1093,11 +1151,11 @@ Decoders and heads & structural errors not visible in the head-input SQNR & -- &
 \botrule
 \end{tabular}
 \footnotetext{Effects on the injected and propagated noise; the relative accuracy loss follows from the head-input SQNR by the empirical relation of Section~\ref{sec:worked} (tenfold per 12\,dB).}
-\end{sidewaystable}
+\end{table}
 
 % BEGIN GENERATED X_selective
-\begin{sidewaystable}
-\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{table}[h]
+\footnotesize\setlength{\tabcolsep}{2.5pt}
 \caption{Selective precision: accuracy, latency and energy versus the number $k$ of convolutions kept in FP16}\label{tab:selective}
 \begin{tabular}{@{}llrrrr@{}}
 \toprule
@@ -1138,12 +1196,12 @@ YOLOv10-X & INT8 (base) & 0 & 47.8 & 4.82 & 309.8 \\
 \botrule
 \end{tabular}
 \footnotetext{Accuracy: ImageNetV2 top-1 (EfficientNet-B0) or COCO val2017 mAP (YOLOv10). $k_\text{eff}$: FP16 convolutions including those added by the kernel-closure rule. Latency and energy from a shorter protocol than Table~\ref{tab:accuracy} (500 executions, 5\,s energy window); compare within this table. Random subsets: mean and range over three seeds.}
-\end{sidewaystable}
+\end{table}
 % END GENERATED X_selective
 
 % BEGIN GENERATED X_calibration
-\begin{sidewaystable}
-\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{table}[h]
+\footnotesize\setlength{\tabcolsep}{2.5pt}
 \caption{Sensitivity of the deployed INT8 accuracy to the calibration sample}\label{tab:calibvar}
 \begin{tabular}{@{}lrrrrrrrr@{}}
 \toprule
@@ -1159,7 +1217,7 @@ DenseNet-121 & 0.90 & 500 & 57.36 & 58.44 & 58.66 & 58.47 & 58.44--58.66 & 1.30 
 \botrule
 \end{tabular}
 \footnotetext{Entropy calibration on seeded random subsets of the calibration set (COCO train2017: 512 images; ImageNetV2 calibration split: 1\,000 images), same exclusions and deployment engines as the main results; accuracy on the full evaluation sets (COCO val2017 box mAP, ImageNetV2 top-1, \%). Full set: main result (Table~\ref{tab:accuracy}); recalibrating on the full set with the same code reproduces it. Max $|\Delta|$: largest deviation of a subset calibration from the full-set result.}
-\end{sidewaystable}
+\end{table}
 % END GENERATED X_calibration
 
 % BEGIN GENERATED X_calibration_methods
@@ -1225,13 +1283,13 @@ DenseNet-121 & FP16 & 62.0 & 0.0 & 2.39 & 70.5 & $-$54\% & 0\% \\
 
 \pepfigure{S_pareto}{Accuracy versus latency. Accuracy against the median latency at batch size 8 for FP32, FP16, INT8 and FP8 (final benchmark) and for the selective-precision INT8 variants (grey; one-shot and iterative PEP-AI ranking, shorter timing protocol).}{fig:pareto}
 
-\pepfigure{S_qualitative}{Qualitative example under reduced contrast. YOLOv10-X on a COCO val2017 traffic scene (image 356612, selected automatically among the first 200 analysis images with at least four road users, two of them vehicles, as the scene with the most INT8-specific vanishing detections at contrast severity 4), clean (top) and at contrast severity 4 (bottom). Left: FP32 detections (score $\geq0.5$). Middle and right: INT8 (with FP32 fallback) and FP8 detections over the head-input deviation map ($\mathrm{MRE}_\mathrm{proj}$ of the channel-max projection, mean over the three pyramid levels); dashed: FP32 detections without a counterpart (IoU $\geq0.5$, score $\geq0.3$).}{fig:qualitative}
+\pepfigure{S_qualitative}{Qualitative example under reduced contrast. YOLOv10-X on COCO image 356612, clean (top) and at contrast severity 4 (bottom); the scene was selected automatically as the one with the most INT8-specific vanishing detections among the first 200 analysis images with at least four road users. Left: FP32 detections (score $\geq0.5$). Middle and right: INT8 (FP32 fallback) and FP8 detections over the head-input $\mathrm{MRE}_\mathrm{proj}$ map (mean of the three pyramid levels); dashed: FP32 detections without a counterpart (IoU $\geq0.5$, score $\geq0.3$).}{fig:qualitative}
 
-\pepfigure{R_risk}{Local deviation as a predictor of vanishing detections. Local head-input deviation as a predictor of detections that vanish under INT8, i.e.\ FP32 detections above the 0.5 threshold without an INT8 counterpart down to a score of 0.3 (COCO val2017, 5\,000 images, INT8 with FP32 fallback). \textbf{a} ROC curves of the median $\mathrm{MRE}_\mathrm{proj}$ inside the detection box. \textbf{b} Share of vanishing detections per decile of the local deviation; dashed lines: data-derived threshold of each architecture (maximum Youden index).}{fig:risk}
+\pepfigure{R_risk}{Local deviation as a predictor of vanishing detections, i.e.\ FP32 detections above the 0.5 threshold without an INT8 counterpart down to a score of 0.3 (COCO val2017, 5\,000 images, INT8 with FP32 fallback). \textbf{a} ROC curves of the median $\mathrm{MRE}_\mathrm{proj}$ inside the detection box. \textbf{b} Share of vanishing detections per decile of the local deviation; dashed lines: data-derived threshold of each architecture (maximum Youden index).}{fig:risk}
 
 \pepfigure{S_robustness}{Detection accuracy under adverse conditions. Box mAP of the FP32, FP16, INT8 and FP8 detectors under the eight adverse conditions at severities 0 (clean) to 5 (500 COCO val2017 images; FP8 evaluated for YOLOv10 under fog and contrast). FP16 coincides with FP32 in every panel, and FP8 stays close to FP32 (Supplementary Section~\ref{sec:supp-res-rob}).}{fig:robustness}
 
-\pepfigure{S_static_scale}{Test of the static-scale prediction. Static-scale prediction under reduced contrast for YOLOv10-S and YOLOv10-X in INT8 (with FP32 fallback) and FP8. Lines: measured change of the SQNR of every convolution output relative to the clean images (median over the same 100 images; cumulative deviation). Markers: change of the noise injected at the input quantizer of each convolution, computed exactly from FP32 activations and the calibrated scales (32 images), i.e.\ Eq.~\eqref{eq:static} with the measured activation attenuation.}{fig:staticscale}
+\pepfigure{S_static_scale}{Test of the static-scale prediction under reduced contrast for YOLOv10-S and YOLOv10-X in INT8 (FP32 fallback) and FP8. Lines: measured change of the SQNR of every convolution output relative to the clean images (median over the same 100 images; cumulative deviation). Markers: change of the noise injected at the input quantizer of each convolution, computed exactly from FP32 activations and the calibrated scales (32 images), i.e.\ Eq.~\eqref{eq:static} with the measured activation attenuation.}{fig:staticscale}
 
 \pepfigure{S_severity_surface}{Deviation of Faster R-CNN under fog and low light. Median $\mathrm{MRE}_\mathrm{proj}$ of every INT8 Faster R-CNN convolution (backbone and FPN, ordered by depth) as a function of the severity of fog and low light, on a shared colour scale (the same 100 images at every severity; INT8 with FP32 fallback).}{fig:surface}
 
@@ -1240,6 +1298,5 @@ DenseNet-121 & FP16 & 62.0 & 0.0 & 2.39 & 70.5 & $-$54\% & 0\% \\
 \FloatBarrier
 \end{appendices}
 
-\bibliography{sn-bibliography}
 
 \end{document}

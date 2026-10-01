@@ -24,14 +24,16 @@ HOROWITZ = [("8-bit integer add", 0.03), ("32-bit integer add", 0.1), ("16-bit f
 
 # Tables wider than the text block go on a landscape page (Springer template: sidewaystable) in a smaller font.
 WIDE = {"tab:accuracy", "tab:layerstats", "tab:aibo", "tab:engines", "tab:localization", "tab:propagation",
-        "tab:selective", "tab:placement", "tab:operating", "tab:duplicates", "tab:calibvar", "tab:calibmethods", "tab:deployment", "tab:modelcheck", "tab:formulas", "tab:prediction", "tab:static", "tab:staticval"}
+        "tab:placement", "tab:duplicates", "tab:calibmethods", "tab:deployment", "tab:modelcheck", "tab:formulas",
+        "tab:prediction", "tab:static", "tab:staticval"}
 SMALL = {"tab:models", "tab:datasets"}
+COMPACT = {"tab:selective", "tab:operating", "tab:calibvar"}   # fit the text width with narrower column gaps
 
 
 def write(path, body, cols, caption, label, notes=None):
     env = "sidewaystable" if label in WIDE else "table"
-    size = (r"\footnotesize\setlength{\tabcolsep}{4pt}" if label in WIDE
-            else (r"\footnotesize\setlength{\tabcolsep}{4pt}" if label in SMALL else ""))
+    size = (r"\footnotesize\setlength{\tabcolsep}{4pt}" if label in WIDE | SMALL
+            else (r"\footnotesize\setlength{\tabcolsep}{2.5pt}" if label in COMPACT else ""))
     lines = [rf"\begin{{{env}}}" + ("" if env == "sidewaystable" else "[h]"), size,
              rf"\caption{{{caption}}}\label{{{label}}}",
 

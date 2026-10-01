@@ -1,5 +1,5 @@
-\begin{sidewaystable}
-\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{table}[h]
+\footnotesize\setlength{\tabcolsep}{2.5pt}
 \caption{Sensitivity of the deployed INT8 accuracy to the calibration sample}\label{tab:calibvar}
 \begin{tabular}{@{}lrrrrrrrr@{}}
 \toprule
@@ -15,4 +15,4 @@ DenseNet-121 & 0.90 & 500 & 57.36 & 58.44 & 58.66 & 58.47 & 58.44--58.66 & 1.30 
 \botrule
 \end{tabular}
 \footnotetext{Entropy calibration on seeded random subsets of the calibration set (COCO train2017: 512 images; ImageNetV2 calibration split: 1\,000 images), same exclusions and deployment engines as the main results; accuracy on the full evaluation sets (COCO val2017 box mAP, ImageNetV2 top-1, \%). Full set: main result (Table~\ref{tab:accuracy}); recalibrating on the full set with the same code reproduces it. Max $|\Delta|$: largest deviation of a subset calibration from the full-set result.}
-\end{sidewaystable}
+\end{table}

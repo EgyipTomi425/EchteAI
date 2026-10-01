@@ -1,5 +1,5 @@
-\begin{sidewaystable}
-\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{table}[h]
+\footnotesize\setlength{\tabcolsep}{2.5pt}
 \caption{Selective precision: accuracy, latency and energy versus the number $k$ of convolutions kept in FP16}\label{tab:selective}
 \begin{tabular}{@{}llrrrr@{}}
 \toprule
@@ -40,4 +40,4 @@ YOLOv10-X & INT8 (base) & 0 & 47.8 & 4.82 & 309.8 \\
 \botrule
 \end{tabular}
 \footnotetext{Accuracy: ImageNetV2 top-1 (EfficientNet-B0) or COCO val2017 mAP (YOLOv10). $k_\text{eff}$: FP16 convolutions including those added by the kernel-closure rule. Latency and energy from a shorter protocol than Table~\ref{tab:accuracy} (500 executions, 5\,s energy window); compare within this table. Random subsets: mean and range over three seeds.}
-\end{sidewaystable}
+\end{table}

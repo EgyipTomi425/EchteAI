@@ -1,5 +1,5 @@
-\begin{sidewaystable}
-\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{table}[h]
+\footnotesize\setlength{\tabcolsep}{2.5pt}
 \caption{Detection quality for road users (COCO val2017, 5\,000 images)}\label{tab:operating}
 \begin{tabular}{@{}llrrrrrrrr@{}}
 \toprule
@@ -24,4 +24,4 @@ YOLOv10-X & FP32 & 86.4 & 75.7 & 65.1 & 54.1 & 62.9 & 81.8 & 91.4 & 93.6 \\
 \botrule
 \end{tabular}
 \footnotetext{AP$_{50}$: average precision at IoU 0.5; AP: COCO AP@[.5:.95] of the class. Recall and precision: all road-user classes (person, bicycle, car, motorcycle, bus, truck) at the operating threshold (score $\geq0.5$) and IoU $\geq0.5$, with the greedy score-ordered matching of COCOeval; $\geq32^2$\,px: COCO medium and large objects. Precision is a lower bound, because COCO does not annotate every visible object.}
-\end{sidewaystable}
+\end{table}
