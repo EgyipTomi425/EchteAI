@@ -1,8 +1,17 @@
 # EchteAI — PEP-AI validation of quantized perception models
 
+> T. Menyhárt, A. Hajdu, R. Lakatos: *PEP-AI Validated Quantization for Sustainable Edge Computing in
+> Intelligent Transportation Systems*. Journal manuscript (in preparation).
+
+The LaTeX source of the article is in [`paper/`](paper/) (Springer Nature template, single `main.tex`,
+figures in `paper/figures/`). The folder compiles as is with pdfLaTeX and BibTeX, e.g. after uploading
+it to Overleaf or with `latexmk -pdf main.tex`. The TikZ diagrams of the Methods section are rebuilt
+from `paper/figures/src/` with `build.sh`; all other figures and the generated tables are written by
+the pipeline (`scripts/15_assemble_paper.py`).
+
 PEP-AI (*Precise, Explainable and Provable AI*) validates post-training quantized convolutional
 networks at the activation level instead of on output accuracy alone. This repository contains the
-complete, reproducible pipeline of the journal extension of
+article and the complete, reproducible pipeline of the journal extension of
 
 > T. Menyhárt, A. Hajdu, R. Lakatos: *Quantization-Induced Error Propagation: Activation Analysis within
 > the PEP-AI Framework for Sustainable High-Efficiency and Explainable AI*, CITDS 2026.
@@ -104,7 +113,7 @@ scripts/reproduce.sh measure analyze compare  # or selected stages
 | `models` | FP32 ONNX export, FP16/INT8 and FP8 quantization |
 | `engines` | static- and dynamic-shape TensorRT engines |
 | `measure` | every measurement via `scripts/run_tests.py`, then `scripts/final_benchmark.sh` |
-| `analyze` | fleet scenario, figures, LaTeX tables (and the manuscript if `../paper/main.tex` or `$PEPAI_PAPER` exists) |
+| `analyze` | fleet scenario, figures, LaTeX tables, spliced into `paper/main.tex` (or `$PEPAI_PAPER/main.tex`) |
 | `compare` | `scripts/40_compare_results.py`: new tables against `reference_results/tables/` |
 
 **Scheduling.** Engine builds may run in parallel; measurements never do. `scripts/run_tests.py` starts

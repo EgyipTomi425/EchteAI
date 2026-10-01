@@ -1,0 +1,31 @@
+\documentclass[border=4pt]{standalone}
+\usepackage{tikz}
+\input{styles}
+\begin{document}
+\begin{tikzpicture}
+% --- vehicle perception chain
+\node[font=\sffamily\small\bfseries, text=ink, anchor=west] at (-0.9,1.25) {Vehicle (synchronised camera frames)};
+\node[stage, text width=2.2cm] (cam) at (0,0) {cameras\\\scriptsize 6 $\times$ 10\,Hz, batch of 6};
+\node[stage, text width=3.0cm, draw=int8, line width=1pt] (gpu) at (3.6,0) {onboard GPU inference\\\scriptsize TensorRT engine\\\scriptsize \textcolor{fp32}{FP32} / \textcolor{fp16}{FP16} / \textcolor{int8}{INT8} / \textcolor{fp8}{FP8}};
+\node[stage, text width=2.2cm] (det) at (7.1,0) {detections\\\scriptsize boxes, classes};
+\node[stage, text width=2.4cm] (plan) at (10.3,0) {planning \&\\control};
+\draw[arrow] (cam) -- (gpu); \draw[arrow] (gpu) -- (det); \draw[arrow] (det) -- (plan);
+\begin{scope}[on background layer]
+\node[group, fit=(cam) (plan), inner sep=6pt] {};
+\end{scope}
+% --- offline PEP-AI validation
+\node[font=\sffamily\small\bfseries, text=ink, anchor=west] at (-0.9,-1.75) {Offline PEP-AI validation};
+\node[result, text width=2.9cm] (val) at (1.2,-3.0) {\textbf{per precision}\\\scriptsize accuracy, head-input\\\scriptsize deviation, critical errors\\\scriptsize per image $K(p)$};
+\node[result, text width=3.2cm, draw=fp16, line width=1pt] (en) at (5.0,-3.0) {\textbf{measured}\\\scriptsize energy per image $E_\mathrm{img}(p)$,\\\scriptsize latency, jitter};
+% --- AIBO layer
+\node[font=\sffamily\small\bfseries, text=ink, anchor=west] at (7.2,-1.75) {AIBO decision layer};
+\node[data, text width=4.3cm] (ext) at (9.3,-2.75) {\scriptsize fleet size, operating hours, price $c_\mathrm{el}$,\\ grid intensity (g\,CO$_2$/kWh),\\ penalty $\lambda$ per critical error};
+\node[result, text width=3.7cm, draw=fp16, line width=1pt] (cost) at (9.0,-4.5) {\textbf{cost model}\\\scriptsize $C(p,\lambda)=N E_\mathrm{img}c_\mathrm{el}+N K\lambda$\\\scriptsize CO$_2$ $\propto N E_\mathrm{img}$};
+\node[result, text width=2.6cm, draw=int8, line width=1pt] (dec) at (12.6,-4.5) {\textbf{decision}\\\scriptsize precision per model,\\\scriptsize break-even $\lambda^\ast$};
+\draw[arrow] (val.south) |- ([yshift=1.5mm]cost.west);
+\draw[arrow] (en.south) |- ([yshift=-1.5mm]cost.west);
+\draw[arrow] (ext) -- (cost);
+\draw[arrow] (cost) -- (dec);
+\draw[feedback] (dec.north) -- (dec.north |- 0,-1.05) -| node[tag, pos=0.25, above] {deploy the chosen engine} (gpu.south);
+\end{tikzpicture}
+\end{document}

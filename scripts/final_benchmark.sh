@@ -41,6 +41,6 @@ $PY scripts/16_localization.py
 $PY scripts/19_early_exit.py
 $PY scripts/12_figures.py
 $PY scripts/13_tables.py
-PAPER=${PEPAI_PAPER:-../paper}
+PAPER=${PEPAI_PAPER:-paper}
 if [ -f "$PAPER/main.tex" ]; then $PY scripts/15_assemble_paper.py; fi
 echo FINAL_DONE

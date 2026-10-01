@@ -1,0 +1,23 @@
+% Shared TikZ style: validated categorical palette (FP32 blue, FP16 orange, INT8 green, FP8 amber), light print surface.
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds,calc,shapes.geometric}
+\definecolor{fp32}{HTML}{2A78D6}
+\definecolor{fp16}{HTML}{EB6834}
+\definecolor{int8}{HTML}{1BAF7A}
+\definecolor{fp8}{HTML}{EDA100}
+\definecolor{ink}{HTML}{0B0B0B}
+\definecolor{ink2}{HTML}{52514E}
+\definecolor{muted}{HTML}{898781}
+\definecolor{grid}{HTML}{E1E0D9}
+\definecolor{surface}{HTML}{FCFCFB}
+\definecolor{wash}{HTML}{F0EFEC}
+\tikzset{
+  font=\sffamily\small,
+  box/.style={draw=muted, rounded corners=3pt, fill=surface, align=center, inner sep=4pt, text=ink},
+  stage/.style={box, minimum height=1.0cm, text width=2.6cm},
+  data/.style={box, fill=wash, draw=grid},
+  result/.style={box, text width=2.9cm, minimum height=1.35cm},
+  arrow/.style={-{Stealth[length=2.2mm]}, draw=ink2, line width=0.7pt},
+  feedback/.style={arrow, dashed, draw=int8},
+  tag/.style={font=\sffamily\scriptsize, text=ink2},
+  group/.style={draw=grid, rounded corners=5pt, inner sep=6pt, line width=0.8pt},
+}

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from pepai.config import CODE_ROOT, load_config, results_dir
 
-PAPER = Path(os.environ.get("PEPAI_PAPER", CODE_ROOT.parent / "paper"))   # LaTeX source of the article
+PAPER = Path(os.environ.get("PEPAI_PAPER", CODE_ROOT / "paper"))   # LaTeX source of the article
 
 if __name__ == "__main__":
     cfg = load_config()

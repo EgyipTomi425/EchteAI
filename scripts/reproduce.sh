@@ -13,7 +13,7 @@
 #             resumable: finished tasks are listed in results/logs/done.txt and are not repeated; the last
 #             task (scripts/final_benchmark.sh) rebuilds and re-times all benchmark engines
 #   analyze   fleet scenario, figures and tables from results/ (and the manuscript, if $PEPAI_PAPER or
-#             ../paper contains main.tex)
+#             paper/ contains main.tex)
 #   compare   regenerated tables against reference_results/ (scripts/40_compare_results.py)
 #
 # About 35 GPU hours on an NVIDIA H200 for "measure", plus a few hours for "models" and "engines".
@@ -63,7 +63,7 @@ EOF
             $PY scripts/11_aibo.py
             $PY scripts/12_figures.py
             $PY scripts/13_tables.py
-            PAPER=${PEPAI_PAPER:-../paper}
+            PAPER=${PEPAI_PAPER:-paper}
             if [ -f "$PAPER/main.tex" ]; then $PY scripts/15_assemble_paper.py; fi ;;
         compare)
             $PY scripts/40_compare_results.py ;;
