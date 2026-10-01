@@ -23,7 +23,7 @@ HOROWITZ = [("8-bit integer add", 0.03), ("32-bit integer add", 0.1), ("16-bit f
 
 # Tables wider than the text block go on a landscape page (Springer template: sidewaystable) in a smaller font.
 WIDE = {"tab:accuracy", "tab:layerstats", "tab:aibo", "tab:engines", "tab:localization", "tab:propagation",
-        "tab:selective", "tab:placement", "tab:operating", "tab:duplicates", "tab:calibvar", "tab:calibmethods", "tab:deployment", "tab:modelcheck", "tab:formulas", "tab:prediction"}
+        "tab:selective", "tab:placement", "tab:operating", "tab:duplicates", "tab:calibvar", "tab:calibmethods", "tab:deployment", "tab:modelcheck", "tab:formulas", "tab:prediction", "tab:static", "tab:staticval"}
 SMALL = {"tab:models", "tab:datasets"}
 
 
@@ -632,31 +632,48 @@ def table_deployment(cfg, out):
 
 
 def table_formulas(cfg, out):
-    """Extended data: the noise and propagation formulas per number format (no measured data)."""
-    body = [r"Quantity & INT8 & FP8 (E4M3) & FP16 & Source \\", r"\midrule",
+    """Extended data: the noise and propagation formulas per number format, with their mathematical status."""
+    fit_p = results_dir(cfg, "tables") / "prediction_fit.csv"
+    law = ""
+    if fit_p.exists():
+        f = pd.read_csv(fit_p).set_index("predictor")
+        if "sqnr_head_db" in f.index and "exponent_r" in f.columns:
+            r = f.loc["sqnr_head_db"]
+            law = (rf"Relative loss vs head-input SQNR & \multicolumn{{3}}{{c}}{{$\times10$ per {r.db_per_decade:.1f}\,dB, "
+                   rf"i.e.\ $\propto r_h^{{{r.exponent_r:.2f}}}$ (95\% CI {r.exponent_r_lo:.2f}--{r.exponent_r_hi:.2f})}} & "
+                   r"Section~\ref{sec:worked} & empirical, five networks \\")
+    body = [r"Quantity & INT8 & FP8 (E4M3) & FP16 & Source & Status \\", r"\midrule",
             r"Scale and grid & $s=\alpha/127$, uniform, 255 levels & $s=\alpha/448$, $p=4$ significand bits & "
-            r"no scale, $p=11$ & Eq.~\eqref{eq:int8} \\",
+            r"no scale, $p=11$ & Eq.~\eqref{eq:int8} & definition \\",
             r"Injected noise of one quantizer & $\mathrm{SQNR}\approx52.9\,\mathrm{dB}-20\log_{10}\kappa$ & "
-            r"$6.02p+7.44=31.5$\,dB & $6.02p+7.44=73.7$\,dB & Lemma~\ref{lem:noise} \\",
+            r"$6.02p+7.44=31.5$\,dB & $6.02p+7.44=73.7$\,dB & Lemma~\ref{lem:noise} & proved under (A1), (A2) \\",
             r"Dependence on the range $\kappa=\alpha/\sigma$ & $-20$\,dB per decade; clipping above $\alpha$ & "
-            r"none in the normal range & none & Eqs.~\eqref{eq:sqnr-int8}, \eqref{eq:sqnr-fp} \\",
+            r"none in the normal range & none & Eqs.~\eqref{eq:sqnr-int8}, \eqref{eq:sqnr-fp} & proved \\",
             r"Signal scaled by $c$ after calibration & $\Delta\mathrm{SQNR}=20\log_{10}c$ & $0$ for "
-            r"$c\sigma\gg2^{-6}s$ & $0$ & Corollary~\ref{cor:static} \\",
+            r"$c\sigma\gg2^{-6}s$ & $0$ & Corollary~\ref{cor:static} & proved, no clipping \\",
             r"Head-input error & \multicolumn{3}{c}{$r_h^2=\sum_n\Gamma_{n\to h}\rho_n^2$; "
-            r"$\rho_n$ from the row above} & Proposition~\ref{prop:selective} \\",
+            r"$\rho_n$ from the row above} & Proposition~\ref{prop:selective} & proved, linearised \\",
             r"Prediction from FP32 statistics & \multicolumn{3}{c}{$\mathrm{SQNR}_\text{add}=-10\log_{10}"
-            r"\sum_n\rho_n^2$ (all $\Gamma=1$)} & Eq.~\eqref{eq:gammabar} \\",
+            r"\sum_n\rho_n^2$ (all $\Gamma=1$)} & Eq.~\eqref{eq:gammabar} & bound-free estimate \\",
+            r"Number $N$ of quantizers & \multicolumn{3}{c}{$\mathrm{SQNR}_\text{add}=-10\log_{10}N-10\log_{10}"
+            r"\langle\rho_n^2\rangle$: $-3$\,dB per doubling} & Eq.~\eqref{eq:gammabar} & identity \\",
             r"Propagation factor (one measurement) & \multicolumn{3}{c}{$\bar\Gamma=10^{(\mathrm{SQNR}_\text{add}-"
-            r"\mathrm{SQNR}_h)/10}$; $<1$ attenuating, $>1$ amplifying} & Eq.~\eqref{eq:gammabar} \\",
+            r"\mathrm{SQNR}_h)/10}$; $<1$ attenuating, $>1$ amplifying} & Eq.~\eqref{eq:gammabar} & definition \\",
             r"Plateau of a contracting chain & \multicolumn{3}{c}{$\mathrm{SQNR}_\infty=-20\log_{10}\rho+"
-            r"10\log_{10}(1-g^2)$ for $g<1$} & Proposition~\ref{prop:fixedpoint} \\",
+            r"10\log_{10}(1-g^2)$ for $g<1$} & Proposition~\ref{prop:fixedpoint} & proved \\",
+            r"Gain of a non-folded BN & \multicolumn{3}{c}{closed form from $\gamma,\beta,\mu,v$} & "
+            r"Eq.~\eqref{eq:bn} & derived, equal noise per channel \\",
             r"Layers to keep in FP16 & \multicolumn{3}{c}{the $k$ largest contributions $\Gamma_{n\to h}\rho_n^2$} & "
-            r"Proposition~\ref{prop:selective} \\"]
-    write(out / "X_formulas.tex", body, "lllll", "Noise and propagation formulas per number format", "tab:formulas",
+            r"Proposition~\ref{prop:selective} & proved, linearised \\"]
+    if law:
+        body.append(law)
+    write(out / "X_formulas.tex", body, "llllll", "Noise and propagation formulas per number format", "tab:formulas",
           "$\\alpha$: clipping range, $\\sigma$: root-mean-square value of the activation, $\\kappa=\\alpha/\\sigma$, "
           "$p$: significand bits including the implicit one, $\\rho_n$: relative noise injected at node $n$, "
-          "$\\mathrm{SQNR}_h$: measured head-input SQNR, $g$: propagation gain of a chain. Valid under the "
-          "assumptions (A1), (A2) and the linearisation of Section~\\ref{sec:propagation}.")
+          "$\\langle\\cdot\\rangle$: mean over the $N$ quantizers, $\\mathrm{SQNR}_h$: measured head-input SQNR, "
+          "$g$: propagation gain of a chain, $r_h$: relative error of the head input. Proofs: Supplementary "
+          "Sections~\\ref{sec:supp-noise} and~\\ref{sec:supp-prop}. The empirical relation is a least-squares fit "
+          "of $\\log_{10}$ of the relative loss on the head-input SQNR with a $t$-based confidence interval.")
 
 
 def table_model_check(cfg, out, models=("yolov10s", "yolov10x"), severity=5):
@@ -772,9 +789,15 @@ def table_prediction(cfg, out):
         r2 = 1 - np.sum((y - (a + b * x)) ** 2) / np.sum((y - y.mean()) ** 2)
         loo = np.array([np.polyval(np.polyfit(np.delete(x, k), np.delete(y, k), 1), x[k]) for k in range(len(x))])
         d[f"loo_rel_loss_from_{x_col}"] = 10 ** loo
+        from scipy import stats
+        lr = stats.linregress(x, y)
+        tq = stats.t.ppf(0.975, len(x) - 2)
+        lo, hi = lr.slope - tq * lr.stderr, lr.slope + tq * lr.stderr
         rho, p = exact_spearman_p(-x, d.int8_rel_loss.values)
         fits.append({"predictor": x_col, "source": source, "slope_log10_per_db": b, "intercept": a,
                      "db_per_decade": -1 / b, "r2": r2, "spearman_rho": rho, "exact_p_one_sided": p,
+                     "exponent_r": -20 * b, "exponent_r_lo": -20 * hi, "exponent_r_hi": -20 * lo,
+                     "slope_p": lr.pvalue,
                      "loo_max_factor": float(np.max(10 ** np.abs(loo - y))),
                      "loo_median_factor": float(np.median(10 ** np.abs(loo - y)))})
     rho_g, p_g = exact_spearman_p(d.gamma_bar.values, d.int8_rel_loss.values)
@@ -807,12 +830,90 @@ def table_prediction(cfg, out):
           f"{f_head['db_per_decade']:.1f}\\,dB per decade, $R^2={f_head['r2']:.2f}$ for SQNR$_h$).")
 
 
+STATIC_LABELS = {"mobilenet_v2": r"MobileNetV2$^\dagger$", "resnet50": r"ResNet-50$^\dagger$"}
+
+
+def table_static(cfg, out):
+    """Extended data: static analysis of the FP32 parameters (43_static_analysis.py), no data and no execution."""
+    t = results_dir(cfg, "tables")
+    if not (t / "static_analysis.csv").exists():
+        return
+    st = pd.read_csv(t / "static_analysis.csv")
+    order = [m for m in ORDER if m in set(st.model)] + [m for m in st.model if m not in ORDER]
+    st = st.set_index("model").loc[order]
+    pred = pd.read_csv(t / "prediction.csv").set_index("model") if (t / "prediction.csv").exists() else None
+    body = [r"Model & Params & Convs & DW & $N$ & \multicolumn{2}{c}{Channel spread} & "
+            r"\multicolumn{2}{c}{Weights, INT8 (dB)} & Weights & Act.\ INT8 & \multicolumn{2}{c}{Static SQNR$_\text{add}$ (dB)} & "
+            r"Non-fold.\ BN & Measured \\",
+            r"\cmidrule{6-7}\cmidrule{8-9}\cmidrule{12-13}",
+            r" & (M) & & & & median & max & per ch. & per tensor & FP8 (dB) & median (dB) & INT8 & FP8 & (gain) & "
+            r"SQNR$_\text{add}$ (dB) \\", r"\midrule"]
+    for m, r in st.iterrows():
+        label = MODEL_LABELS.get(m, STATIC_LABELS.get(m, m))
+        bn = f"{int(r.nonfoldable_bn)} ({r.bn_gain_median:.2f})" if r.nonfoldable_bn else "--"
+        meas = fmt(pred.loc[m, "sqnr_add_db"]) if pred is not None and m in pred.index else "--"
+        body.append(f"{label} & {r.params_m:.1f} & {int(r.conv_linear_layers)} & {int(r.depthwise_convs)} & "
+                    f"{int(r.act_quantizers)} & {r.act_channel_spread_median:.1f} & {r.act_channel_spread_max:.0f} & "
+                    f"{fmt(r.w_int8_per_channel_median_db)} & {fmt(r.w_int8_per_tensor_median_db)} & "
+                    f"{fmt(r.w_fp8_median_db)} & {fmt(r.act_int8_sqnr_median_db)} & {fmt(r.static_sqnr_add_int8_db)} & "
+                    f"{fmt(r.static_sqnr_add_fp8_db)} & {bn} & {meas} \\\\")
+    note = ""
+    if pred is not None:
+        both = [m for m in pred.index if m in st.index]
+        rho, p = exact_spearman_p(-st.loc[both, "static_sqnr_add_int8_db"].values, pred.loc[both, "int8_rel_loss"].values)
+        note = (f" Ranking of the five networks of the article by static INT8 SQNR$_\\text{{add}}$ against their "
+                f"relative INT8 loss: Spearman $\\rho={rho:.1f}$ (exact one-sided $p={p:.2f}$).")
+        pd.DataFrame([{"static_rank_rho": rho, "p": p}]).to_csv(t / "static_rank.csv", index=False)
+    write(out / "X_static.tex", body, "lrrrrrrrrrrrrrr", "Static analysis of the FP32 parameters", "tab:static",
+          "Computed from the weights and the batch-normalisation buffers only (no image, no forward pass; "
+          "\\texttt{43\\_static\\_analysis.py}). DW: depthwise convolutions. $N$: activation tensors modelled from "
+          "batch normalisation. Channel spread: 90th/10th percentile of the channel RMS under one per-tensor scale. "
+          "Weights: median exact SQNR over the layers, BN folded. Act.\\ INT8: median predicted injected SQNR "
+          "(Gaussian channels, MSE-optimal range). Non-fold.\\ BN: number and median gain of Eq.~\\eqref{eq:bn}. "
+          "Measured SQNR$_\\text{add}$: from FP32 activations and the calibrated scales of the toolchain "
+          "(Table~\\ref{tab:prediction}). $^\\dagger$ not used elsewhere in this article (Table~\\ref{tab:staticval})." + note)
+
+
+def table_static_validation(cfg, out):
+    """Extended data: static prediction against simulated quantization on ImageNetV2 (44_validate_static.py)."""
+    t = results_dir(cfg, "tables")
+    if not (t / "static_validation.csv").exists():
+        return
+    v = pd.read_csv(t / "static_validation.csv")
+    order = [m for m in ["mobilenet_v2", "resnet50"] + ORDER if m in set(v.model)]
+    v = v.set_index("model").loc[order]
+    body = [r"Model & \multicolumn{3}{c}{Quantizer SQNR: static $-$ measured} & \multicolumn{2}{c}{SQNR$_\text{add}$ (dB)} & "
+            r"SQNR$_h$ & $\bar\Gamma$ & \multicolumn{3}{c}{Top-1 (\%)} & \multicolumn{2}{c}{Relative INT8 loss (\%)} \\",
+            r"\cmidrule{2-4}\cmidrule{5-6}\cmidrule{9-11}\cmidrule{12-13}",
+            r" & median (dB) & MAE (dB) & rank $\rho$ & static & measured & INT8 (dB) & INT8 & FP32 & INT8 & FP8 & "
+            r"measured & predicted \\", r"\midrule"]
+    for m, r in v.iterrows():
+        label = MODEL_LABELS.get(m, STATIC_LABELS.get(m, m))
+        body.append(f"{label} & {signed(r.int8_static_vs_measured_median_diff_db)} & {fmt(r.int8_static_vs_measured_mae_db)} & "
+                    f"{r.int8_static_vs_measured_spearman:.2f} & {fmt(r.static_sqnr_add_int8_db)} & "
+                    f"{fmt(r.int8_sqnr_add_measured_db)} & {fmt(r.int8_sqnr_head_db)} & {r.int8_gamma_bar:.2f} & "
+                    f"{100 * r.fp32_top1:.1f} & {100 * r.int8_top1:.1f} & {100 * r.fp8_top1:.1f} & "
+                    f"{100 * r.int8_rel_loss:.1f} & {100 * r.int8_rel_loss_predicted:.1f} \\\\")
+    n_eval, n_cal = int(v.n_eval.iloc[0]), int(v.n_calib.iloc[0])
+    write(out / "X_static_validation.tex", body, "lrrrrrrrrrrrr",
+          "Static analysis against simulated quantization", "tab:staticval",
+          f"ImageNetV2, {n_cal} calibration and {n_eval} evaluation images, CPU simulation "
+          "(\\texttt{44\\_validate\\_static.py}): symmetric per-tensor quantizers on every batch-normalised tensor "
+          "(INT8: MSE-optimal range; FP8 E4M3: maximum), weights per output channel. Quantizer SQNR: static "
+          "prediction from the BN parameters against the exact injected SQNR on the evaluation images. SQNR$_\\text{add}$ "
+          "includes the weight quantizers. Predicted loss: from the measured SQNR$_h$ with the calibration of "
+          "Table~\\ref{tab:prediction} (five TensorRT networks). The simulated placement and calibration differ "
+          "from the TensorRT toolchain; the INT8 numbers of EfficientNet-B0 and DenseNet-121 therefore differ "
+          "from Table~\\ref{tab:accuracy}.")
+
+
 if __name__ == "__main__":
     cfg = load_config()
     out = results_dir(cfg, "tables", "tex")
     for f in (table_models, table_datasets, table_energy_reference, table_placement, table_accuracy_speed, table_layer_stats, table_aibo,
               table_hardware, table_engines, table_localization, table_propagation, table_selective,
               table_calibration_variability, table_operating_point, table_duplicates,
-              table_calibration_methods, table_deployment, table_formulas, table_model_check, table_prediction):
+              table_calibration_methods, table_deployment, table_prediction, table_formulas, table_model_check, table_static,
+              table_static_validation):
         f(cfg, out)
         print("done:", f.__name__, flush=True)

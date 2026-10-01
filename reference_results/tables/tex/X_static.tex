@@ -1,0 +1,20 @@
+\begin{sidewaystable}
+\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Static analysis of the FP32 parameters}\label{tab:static}
+\begin{tabular}{@{}lrrrrrrrrrrrrrr@{}}
+\toprule
+Model & Params & Convs & DW & $N$ & \multicolumn{2}{c}{Channel spread} & \multicolumn{2}{c}{Weights, INT8 (dB)} & Weights & Act.\ INT8 & \multicolumn{2}{c}{Static SQNR$_\text{add}$ (dB)} & Non-fold.\ BN & Measured \\
+\cmidrule{6-7}\cmidrule{8-9}\cmidrule{12-13}
+ & (M) & & & & median & max & per ch. & per tensor & FP8 (dB) & median (dB) & INT8 & FP8 & (gain) & SQNR$_\text{add}$ (dB) \\
+\midrule
+Faster R-CNN R50-FPN & 26.8 & 61 & 0 & 53 & 2.0 & 1539 & 38.3 & 29.1 & 31.8 & 38.7 & 20.2 & 14.3 & -- & 12.5 \\
+YOLOv10-S & 8.1 & 112 & 24 & 99 & 1.8 & 5 & 39.8 & 32.2 & 32.0 & 38.8 & 18.0 & 11.6 & -- & 6.0 \\
+YOLOv10-X & 31.7 & 198 & 70 & 185 & 1.8 & 851 & 39.2 & 31.1 & 32.0 & 38.4 & 14.9 & 8.9 & -- & 2.6 \\
+EfficientNet-B0 & 5.2 & 82 & 16 & 49 & 3.3 & 29 & 42.6 & 33.0 & 32.3 & 34.3 & 16.2 & 14.6 & -- & 3.7 \\
+DenseNet-121 & 7.9 & 121 & 0 & 121 & 2.0 & 1615 & 38.4 & 32.7 & 31.7 & 38.4 & 17.1 & 10.7 & 62 (1.24) & 6.1 \\
+MobileNetV2$^\dagger$ & 3.5 & 53 & 17 & 52 & 3.8 & 99 & 43.2 & 34.2 & 32.3 & 40.2 & 22.0 & 14.5 & -- & -- \\
+ResNet-50$^\dagger$ & 25.5 & 54 & 0 & 53 & 2.6 & 28 & 37.4 & 26.1 & 31.9 & 37.7 & 18.8 & 14.3 & -- & -- \\
+\botrule
+\end{tabular}
+\footnotetext{Computed from the weights and the batch-normalisation buffers only (no image, no forward pass; \texttt{43\_static\_analysis.py}). DW: depthwise convolutions. $N$: activation tensors modelled from batch normalisation. Channel spread: 90th/10th percentile of the channel RMS under one per-tensor scale. Weights: median exact SQNR over the layers, BN folded. Act.\ INT8: median predicted injected SQNR (Gaussian channels, MSE-optimal range). Non-fold.\ BN: number and median gain of Eq.~\eqref{eq:bn}. Measured SQNR$_\text{add}$: from FP32 activations and the calibrated scales of the toolchain (Table~\ref{tab:prediction}). $^\dagger$ not used elsewhere in this article (Table~\ref{tab:staticval}). Ranking of the five networks of the article by static INT8 SQNR$_\text{add}$ against their relative INT8 loss: Spearman $\rho=0.9$ (exact one-sided $p=0.04$).}
+\end{sidewaystable}

@@ -1,0 +1,292 @@
+"""Static INT8/FP8 analysis of an FP32 model: parameters only, no image and no forward pass.
+
+What a network's weights and batch-normalisation (BN) buffers reveal before anything is executed:
+
+  weights     exact SQNR of every convolution / linear weight under symmetric INT8 with one scale per output
+              channel (deployment setting) and per tensor, and under FP8 E4M3 with per-channel max scaling
+  activations every BN stores the running mean and variance of its input, so its output channel c is modelled as
+              N(beta_c, gamma_c^2 v_c / (v_c + eps)), passed through the following activation function
+              (ReLU, SiLU, ...); for the per-tensor quantizer of this tensor the script reports the channel
+              imbalance (90th / 10th percentile of the channel RMS), the MSE-optimal normalised range kappa
+              (Eq. (5)) and the predicted injected SQNR of INT8 (Lemma 1) and FP8
+  screening   SQNR_add of all modelled activation quantizers with unit propagation factors (Eq. (16)), i.e. the
+              FP32-statistics screening of Section 3.8 without calibration data
+  BN gain     closed form of Eq. (A3) for batch normalisations that cannot be folded into a preceding
+              convolution (e.g. the pre-activation BN of DenseNet), > 1 means amplification
+  structure   depthwise convolutions, sigmoid gates (squeeze-and-excitation, SiLU), concatenations implied by
+              non-foldable BN, attention blocks
+
+The activation model is an approximation (Gaussian channels, BN statistics of the training data, no residual
+additions, no calibration-set clipping); Section 3.8 / Table tab:static of the article compare it with the
+measured quantizer statistics.
+
+  python scripts/43_static_analysis.py --model efficientnet_b0
+  python scripts/43_static_analysis.py --model all
+  python scripts/43_static_analysis.py --torchvision resnet50      # any torchvision classification model
+"""
+import argparse
+
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
+
+from pepai.config import load_config, results_dir
+
+ACTIVATIONS = {nn.ReLU: "relu", nn.ReLU6: "relu6", nn.SiLU: "silu", nn.Hardswish: "hardswish", nn.GELU: "gelu",
+               nn.Sigmoid: "sigmoid", nn.LeakyReLU: "leaky_relu", nn.Identity: "identity"}
+INT8_LEVELS = 127
+E4M3_MAX = 448.0
+N_SAMPLES = 2048          # samples per channel of the Gaussian activation model (synthetic, not data)
+
+
+# ----------------------------------------------------------------------------------------------- quantizers
+
+def int8_quant(x, scale):
+    return np.clip(np.round(x / scale), -INT8_LEVELS, INT8_LEVELS) * scale
+
+
+def e4m3_quant(x, scale):
+    """Round to the nearest E4M3 number (3 explicit mantissa bits, min normal 2^-6, max 448) after scaling."""
+    v = x / scale
+    a = np.minimum(np.abs(v), E4M3_MAX)
+    e = np.floor(np.log2(np.maximum(a, 2.0 ** -6)))
+    step = 2.0 ** (e - 3)
+    return np.sign(v) * np.minimum(np.round(a / step) * step, E4M3_MAX) * scale
+
+
+def sqnr_db(x, q):
+    err = np.sum((q - x) ** 2)
+    return float("inf") if err == 0 else float(10 * np.log10(np.sum(x ** 2) / err))
+
+
+def weight_sqnr(w):
+    """Exact INT8 (per channel, per tensor) and FP8 (per channel) SQNR of a weight tensor [out, ...]."""
+    w = w.reshape(w.shape[0], -1).astype(np.float64)
+    amax = np.maximum(np.abs(w).max(axis=1, keepdims=True), 1e-12)
+    per_ch = int8_quant(w, amax / INT8_LEVELS)
+    per_t = int8_quant(w, amax.max() / INT8_LEVELS)
+    fp8 = e4m3_quant(w, amax / E4M3_MAX)
+    return sqnr_db(w, per_ch), sqnr_db(w, per_t), sqnr_db(w, fp8)
+
+
+# ------------------------------------------------------------------------------------ activation model
+
+def act_fn(name):
+    return {"relu": lambda z: np.maximum(z, 0), "relu6": lambda z: np.clip(z, 0, 6),
+            "silu": lambda z: z / (1 + np.exp(-z)), "hardswish": lambda z: z * np.clip(z + 3, 0, 6) / 6,
+            "gelu": lambda z: 0.5 * z * (1 + np.tanh(0.7978845608 * (z + 0.044715 * z ** 3))),
+            "sigmoid": lambda z: 1 / (1 + np.exp(-z)), "leaky_relu": lambda z: np.where(z > 0, z, 0.01 * z),
+            "identity": lambda z: z}[name]
+
+
+def bn_output_moments(bn):
+    """Per-channel mean and standard deviation of the BN output under its running statistics."""
+    g = bn.weight.detach().double().numpy()
+    b = bn.bias.detach().double().numpy()
+    v = bn.running_var.detach().double().numpy()
+    eps = getattr(bn, "eps", 1e-5)
+    return b, np.abs(g) * np.sqrt(v / (v + eps))
+
+
+def activation_quantizer(bn, act, rng):
+    """Static model of the per-tensor quantizer of a BN(+activation) output tensor."""
+    mean, std = bn_output_moments(bn)
+    z = mean[:, None] + std[:, None] * rng.standard_normal((len(mean), N_SAMPLES))
+    x = act_fn(act)(z)
+    ch_rms = np.sqrt(np.mean(x ** 2, axis=1))
+    rms = float(np.sqrt(np.mean(x ** 2)))
+    if rms == 0:
+        return None
+    flat = x.ravel()
+    amax = float(np.abs(flat).max())
+    # MSE-optimal clipping range of Eq. (5) on the modelled distribution (analytical range setting)
+    cands = amax * np.geomspace(0.05, 1.0, 60)
+    errs = [np.mean((int8_quant(flat, a / INT8_LEVELS) - flat) ** 2) for a in cands]
+    alpha = float(cands[int(np.argmin(errs))])
+    q8 = int8_quant(flat, alpha / INT8_LEVELS)
+    qf8 = e4m3_quant(flat, amax / E4M3_MAX)
+    p10, p90 = np.percentile(ch_rms[ch_rms > 0], [10, 90]) if np.any(ch_rms > 0) else (np.nan, np.nan)
+    return {"channels": len(mean), "channel_spread": float(p90 / p10) if p10 > 0 else np.inf,
+            "dead_channels": int(np.sum(ch_rms < 1e-6 * max(rms, 1e-12))),
+            "kappa": alpha / rms, "sqnr_int8_pred_db": 10 * np.log10(12 * INT8_LEVELS ** 2) - 20 * np.log10(alpha / rms),
+            "sqnr_int8_db": sqnr_db(flat, q8), "sqnr_fp8_db": sqnr_db(flat, qf8),
+            "clip_share": float(np.mean(np.abs(flat) > alpha))}
+
+
+def bn_gain(bn):
+    """Eq. (A3): propagation gain of a non-folded BN for equal noise power per input channel."""
+    g = bn.weight.detach().double().numpy()
+    b = bn.bias.detach().double().numpy()
+    mu = bn.running_mean.detach().double().numpy()
+    v = bn.running_var.detach().double().numpy()
+    eps = getattr(bn, "eps", 1e-5)
+    g2 = np.mean(g ** 2 / (v + eps)) * np.sum(mu ** 2 + v) / np.sum(g ** 2 * v / (v + eps) + b ** 2)
+    return float(np.sqrt(g2))
+
+
+# ------------------------------------------------------------------------------------------ traversal
+
+def is_bn(m):
+    return isinstance(m, nn.modules.batchnorm._BatchNorm) or type(m).__name__ == "FrozenBatchNorm2d"
+
+
+def leaf_modules(model):
+    return [(n, m) for n, m in model.named_modules() if len(list(m.children())) == 0]
+
+
+def following_activation(leaves, i, name, model):
+    """Activation applied to the output of the BN at leaves[i] (next leaf, or the parent's shared ReLU)."""
+    if i + 1 < len(leaves):
+        nxt = leaves[i + 1][1]
+        for cls, act in ACTIVATIONS.items():
+            if isinstance(nxt, cls):
+                return act
+    parent = model.get_submodule(name.rsplit(".", 1)[0]) if "." in name else model
+    if type(parent).__name__ in ("Bottleneck", "BasicBlock") and not name.endswith(("bn3", "downsample.1")):
+        return "relu"       # torchvision ResNet: one ReLU module applied after bn1 and bn2 in forward()
+    return "identity"
+
+
+def foldable(leaves, i):
+    """A BN is folded into the convolution that directly precedes it with the same number of channels."""
+    if i == 0:
+        return False
+    prev = leaves[i - 1][1]
+    bn = leaves[i][1]
+    return isinstance(prev, (nn.Conv2d, nn.Conv1d)) and prev.out_channels == bn.weight.numel()
+
+
+def analyse(model, rng):
+    leaves = leaf_modules(model)
+    layers, acts, bns = [], [], []
+    for i, (name, m) in enumerate(leaves):
+        if isinstance(m, (nn.Conv2d, nn.Linear)) and m.weight is not None:
+            w = m.weight.detach().double().numpy()
+            if i + 1 < len(leaves) and is_bn(leaves[i + 1][1]) and foldable(leaves, i + 1):
+                bn = leaves[i + 1][1]   # deployed weights: BN folded into the convolution
+                scale = bn.weight.detach().double().numpy() / np.sqrt(bn.running_var.detach().double().numpy()
+                                                                     + getattr(bn, "eps", 1e-5))
+                w = w * scale.reshape(-1, *([1] * (w.ndim - 1)))
+            pc, pt, f8 = weight_sqnr(w)
+            dw = isinstance(m, nn.Conv2d) and m.groups > 1 and m.groups == m.in_channels
+            layers.append({"layer": name, "type": "depthwise" if dw else type(m).__name__.lower(),
+                           "params": m.weight.numel(), "w_int8_per_channel_db": pc, "w_int8_per_tensor_db": pt,
+                           "w_fp8_db": f8})
+        if is_bn(m):
+            act = following_activation(leaves, i, name, model)
+            fold = foldable(leaves, i)
+            q = activation_quantizer(m, act, rng)
+            if q is not None:
+                acts.append({"tensor": name, "activation": act, **q})
+            if not fold:
+                bns.append({"bn": name, "gain_a3": bn_gain(m)})
+    n_sigmoid = sum(isinstance(m, (nn.Sigmoid, nn.SiLU, nn.Hardsigmoid)) for _, m in leaves)
+    n_attn = sum(type(m).__name__ in ("Attention", "MultiheadAttention", "PSA") for m in model.modules())
+    return pd.DataFrame(layers), pd.DataFrame(acts), pd.DataFrame(bns), {"sigmoid_gates": n_sigmoid,
+                                                                          "attention_blocks": n_attn}
+
+
+def summarise(name, layers, acts, bns, extra):
+    s = {"model": name, "params_m": layers.params.sum() / 1e6, "conv_linear_layers": len(layers),
+         "depthwise_convs": int((layers.type == "depthwise").sum()),
+         "w_int8_per_channel_median_db": layers.w_int8_per_channel_db.median(),
+         "w_int8_per_channel_min_db": layers.w_int8_per_channel_db.min(),
+         "w_int8_per_tensor_median_db": layers.w_int8_per_tensor_db.median(),
+         "w_int8_per_tensor_min_db": layers.w_int8_per_tensor_db.min(),
+         "w_fp8_median_db": layers.w_fp8_db.median(),
+         "act_quantizers": len(acts), "act_channel_spread_median": acts.channel_spread.median(),
+         "act_channel_spread_max": acts.channel_spread.replace(np.inf, np.nan).max(),
+         "act_kappa_median": acts.kappa.median(), "act_int8_sqnr_median_db": acts.sqnr_int8_db.median(),
+         "act_int8_sqnr_min_db": acts.sqnr_int8_db.min(), "act_fp8_sqnr_median_db": acts.sqnr_fp8_db.median(),
+         "static_sqnr_add_int8_db": -10 * np.log10(np.sum(10 ** (-acts.sqnr_int8_db / 10))),
+         "static_sqnr_add_fp8_db": -10 * np.log10(np.sum(10 ** (-acts.sqnr_fp8_db / 10))),
+         "nonfoldable_bn": len(bns), "bn_gain_median": bns.gain_a3.median() if len(bns) else np.nan,
+         "bn_gain_max": bns.gain_a3.max() if len(bns) else np.nan, **extra}
+    return s
+
+
+def report(s, layers, acts, bns):
+    print(f"\n=== {s['model']}: {s['params_m']:.1f} M parameters, {s['conv_linear_layers']} conv/linear layers "
+          f"({s['depthwise_convs']} depthwise)")
+    print(f"  weights      INT8 per channel: median {s['w_int8_per_channel_median_db']:.1f} dB "
+          f"(worst {s['w_int8_per_channel_min_db']:.1f}); per tensor: median {s['w_int8_per_tensor_median_db']:.1f} dB "
+          f"(worst {s['w_int8_per_tensor_min_db']:.1f}); FP8: {s['w_fp8_median_db']:.1f} dB")
+    print(f"  activations  {s['act_quantizers']} BN-modelled quantizers; channel spread median "
+          f"{s['act_channel_spread_median']:.1f}x (max {s['act_channel_spread_max']:.0f}x); MSE-optimal kappa median "
+          f"{s['act_kappa_median']:.1f}")
+    print(f"               INT8 injected SQNR median {s['act_int8_sqnr_median_db']:.1f} dB "
+          f"(worst {s['act_int8_sqnr_min_db']:.1f}); FP8 {s['act_fp8_sqnr_median_db']:.1f} dB")
+    print(f"  screening    static SQNR_add: INT8 {s['static_sqnr_add_int8_db']:.1f} dB, FP8 "
+          f"{s['static_sqnr_add_fp8_db']:.1f} dB (unit propagation factors, no data)")
+    if s["nonfoldable_bn"]:
+        print(f"  BN gain      {s['nonfoldable_bn']} non-foldable BN, Eq. (A3) median {s['bn_gain_median']:.2f} "
+              f"(max {s['bn_gain_max']:.2f}); > 1 amplifies upstream noise -> candidate for FP16 placement")
+    print(f"  structure    {s['sigmoid_gates']} sigmoid-type activations (SiLU / gates), "
+          f"{s['attention_blocks']} attention blocks")
+    worst = acts.nsmallest(3, "sqnr_int8_db")
+    for _, r in worst.iterrows():
+        print(f"  weakest      {r.tensor} ({r.activation}): INT8 {r.sqnr_int8_db:.1f} dB, spread "
+              f"{r.channel_spread:.0f}x, kappa {r.kappa:.1f}")
+    flags = []
+    if s["depthwise_convs"]:
+        flags.append("depthwise convolutions with per-tensor activation scales")
+    if s["act_channel_spread_max"] > 20:
+        flags.append(f"strong channel imbalance (up to {s['act_channel_spread_max']:.0f}x) under one per-tensor scale")
+    if s["nonfoldable_bn"] and s["bn_gain_median"] > 1:
+        flags.append("non-foldable BN amplifies quantization noise")
+    if s["attention_blocks"]:
+        flags.append("attention block (wide activation range, clipping under distribution shift)")
+    print("  flags        " + ("; ".join(flags) if flags else "none"))
+
+
+def load(name, cfg):
+    from pepai import models
+    if name in ("efficientnet_b0", "densenet121"):
+        return models.load_classifier(name)
+    if name == "frcnn_r50_fpn":                      # backbone + FPN (the quantized part), BN not yet folded
+        import torchvision
+        from torchvision.models.detection import FasterRCNN_ResNet50_FPN_Weights
+        return torchvision.models.detection.fasterrcnn_resnet50_fpn(
+            weights=FasterRCNN_ResNet50_FPN_Weights.COCO_V1).backbone
+    if name.startswith("yolov10"):
+        return models.load_yolo(name, cfg["paths"]["data"] / "weights").model
+    raise SystemExit(f"unknown model {name}")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--model", help="one of the article's models, or 'all'")
+    g.add_argument("--torchvision", help="any torchvision classification model with default weights")
+    args = ap.parse_args()
+    cfg = load_config()
+    torch.set_grad_enabled(False)
+    rng = np.random.default_rng(cfg["seed"])
+    if args.torchvision:
+        import torchvision
+        targets = [(args.torchvision, torchvision.models.get_model(args.torchvision, weights="DEFAULT").eval())]
+    else:
+        names = cfg["models"] if args.model == "all" else [args.model]
+        targets = [(n, load(n, cfg).eval()) for n in names]
+    out = results_dir(cfg, "tables", "static")
+    rows = []
+    for name, model in targets:
+        layers, acts, bns, extra = analyse(model, rng)
+        s = summarise(name, layers, acts, bns, extra)
+        report(s, layers, acts, bns)
+        layers.to_csv(out / f"{name}_weights.csv", index=False)
+        acts.to_csv(out / f"{name}_activations.csv", index=False)
+        bns.to_csv(out / f"{name}_bn_gain.csv", index=False)
+        rows.append(s)
+    summary_p = results_dir(cfg, "tables") / "static_analysis.csv"
+    old = pd.read_csv(summary_p) if summary_p.exists() else pd.DataFrame()
+    new = pd.DataFrame(rows)
+    if len(old):
+        old = old[~old.model.isin(new.model)]
+    pd.concat([old, new]).to_csv(summary_p, index=False)
+    print(f"\nwritten: {summary_p} and {out}/<model>_*.csv")
+
+
+if __name__ == "__main__":
+    main()
