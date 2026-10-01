@@ -1,13 +1,14 @@
 """LaTeX table fragments (booktabs) for the manuscript, written to results/tables/tex/."""
 import json
 import re
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from pepai.activations import load_activation_table
 from pepai.bench import benchmark_medians
-from pepai.config import load_config, results_dir
+from pepai.config import CODE_ROOT, load_config, results_dir
 from pepai.plots import MODEL_LABELS, PRECISION_LABELS
 
 ORDER = ["frcnn_r50_fpn", "yolov10s", "yolov10x", "efficientnet_b0", "densenet121"]
@@ -274,15 +275,23 @@ def table_hardware(cfg, out):
     else:
         from pepai.bench import GPUMonitor
         info = GPUMonitor().info()
-    import onnxruntime
-    import tensorrt
-    import torch
-    import modelopt
+    try:
+        import onnxruntime
+        import tensorrt
+        import torch
+        import modelopt
+        env = {"tensorrt": tensorrt.__version__, "modelopt": modelopt.__version__,
+               "onnxruntime": onnxruntime.__version__, "torch": torch.__version__, "cuda": torch.version.cuda}
+    except ImportError:  # offline regeneration without the GPU stack: versions recorded with the results
+        env_p = Path(cfg["paths"]["results"]) / "environment.json"
+        if not env_p.exists():
+            env_p = CODE_ROOT / "reference_results" / "environment.json"
+        env = json.loads(env_p.read_text())
     rows = [("GPU", f"{info.get('name', 'NVIDIA H200')}, power limit {info.get('power_limit_w', 700):.0f} W"),
             ("GPU driver", info.get("driver", "")),
             ("CPU", "Intel Xeon Platinum 8480C"),
-            ("TensorRT", tensorrt.__version__), ("NVIDIA ModelOpt", modelopt.__version__),
-            ("ONNX Runtime", onnxruntime.__version__), ("PyTorch / CUDA", f"{torch.__version__} / {torch.version.cuda}")]
+            ("TensorRT", env["tensorrt"]), ("NVIDIA ModelOpt", env["modelopt"]),
+            ("ONNX Runtime", env["onnxruntime"]), ("PyTorch / CUDA", f"{env['torch']} / {env['cuda']}")]
     body = [r"Component & Version / specification \\", r"\midrule"] + [f"{k} & {v} \\\\" for k, v in rows]
     write(out / "M3_hardware.tex", body, "ll", "Hardware and software environment", "tab:hardware")
 
@@ -320,7 +329,11 @@ def table_engines(cfg, out):
 def head_sqnr(cfg, name, quant="int8fp32"):
     """Median over images of the mean head-input SQNR (as in table_layer_stats)."""
     path = results_dir(cfg, "activations") / f"{name}_{quant}.csv.gz"
-    if not path.exists():
+    if not path.exists():  # activations are not distributed; use the value stored with the results
+        pf = results_dir(cfg, "tables") / "propagation_factor.csv"
+        if quant == "int8fp32" and pf.exists():
+            v = pd.read_csv(pf).set_index("model")["sqnr_head_db"]
+            return float(v.get(name, float("nan")))
         return float("nan")
     df = load_activation_table(path)
     return df[df.final].groupby("image").sqnr_db.mean().median()
@@ -920,8 +933,23 @@ def table_static_validation(cfg, out):
 
 
 if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser(description="Write the LaTeX tables of the article from the result tables.")
+    ap.add_argument("--results", help="results directory to read (default: paths.results of the config); "
+                                      "'reference_results' regenerates the tables of the article without a GPU "
+                                      "(on a copy in results/regenerated)")
+    ap.add_argument("--out", help="output directory for the .tex tables (default: <results>/tables/tex)")
+    args = ap.parse_args()
     cfg = load_config()
-    out = results_dir(cfg, "tables", "tex")
+    if args.results:
+        # Work on a copy: several tables also (re)write derived CSV files next to their inputs.
+        import shutil
+        work = CODE_ROOT / "results" / "regenerated"
+        shutil.copytree((CODE_ROOT / args.results).resolve(), work, dirs_exist_ok=True)
+        cfg["paths"]["results"] = work
+        print(f"reading {args.results}, writing to {work}")
+    out = Path(args.out).resolve() if args.out else results_dir(cfg, "tables", "tex")
+    out.mkdir(parents=True, exist_ok=True)
     for f in (table_models, table_datasets, table_energy_reference, table_placement, table_accuracy_speed, table_layer_stats, table_aibo,
               table_hardware, table_engines, table_localization, table_propagation, table_selective,
               table_calibration_variability, table_operating_point, table_duplicates,

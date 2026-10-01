@@ -1,6 +1,7 @@
 """All manuscript figures from results/ (figures whose inputs are missing are skipped)."""
 import json
 import re
+from pathlib import Path
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -1154,11 +1155,34 @@ def fig_energy_surface(cfg, out, name="efficientnet_b0", strategy="pepai_iter"):
     save(fig, out / "R3_energy_surface")
 
 if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser(description="Draw the figures of the article from the results.")
+    ap.add_argument("--results", help="results directory to read (default: paths.results of the config); "
+                                      "'reference_results' redraws the figures without a GPU (on a copy in "
+                                      "results/regenerated); figures that need the stored activations or the "
+                                      "GPU stack are skipped")
+    args = ap.parse_args()
     cfg = load_config()
+    if args.results:
+        import shutil
+        work = Path(__file__).resolve().parent.parent / "results" / "regenerated"
+        shutil.copytree((Path(__file__).resolve().parent.parent / args.results).resolve(), work, dirs_exist_ok=True)
+        cfg["paths"]["results"] = work
+        print(f"reading {args.results}, writing to {work}")
     style()
     out = results_dir(cfg, "figures")
+    skipped = []
     for f in (fig_activation_maps, fig_hexbin, fig_propagation, fig_operator_amplification, fig_speed,
               fig_selective, fig_surface, fig_robustness, fig_risk, fig_aibo, fig_energy_surface,
               fig_layer_profile, fig_conditions, fig_noise_model, fig_static_scale, fig_noise_validation, fig_qualitative, fig_pareto, fig_recursion, fig_prediction):
-        f(cfg, out)
+        try:
+            f(cfg, out)
+        except (ImportError, FileNotFoundError, OSError) as e:
+            if not args.results:
+                raise
+            skipped.append(f.__name__)
+            print(f"skipped: {f.__name__} ({type(e).__name__}: {e})", flush=True)
+            continue
         print("done:", f.__name__, flush=True)
+    if skipped:
+        print("skipped (need the stored activations, images or the GPU stack):", ", ".join(skipped))

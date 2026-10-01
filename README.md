@@ -34,12 +34,20 @@ Measured on an NVIDIA H200 with TensorRT 11.3 (COCO val2017 box mAP, ImageNetV2 
 | | latency bs1 (ms) | 2.78 | 1.59 | 1.39 | 0.71 |
 | | energy bs8 (mJ/img) | 152 | 70.5 | 40.6 | 40.9 |
 
+![Speed-up, weight size and energy per image of FP32, FP16, INT8 and FP8 engines](docs/img/R5_speedup.png)
+
 * INT8 is 1.6–11.8× faster than strict FP32 and 1.1–1.5× faster than FP16, and uses 72–91 % less energy per image.
 * FP16 is lossless; FP8 loses at most 0.4 points; INT8 loses between 0.25 mAP and 41 top-1 points.
 * The difference is explained by the noise model: a single INT8 quantizer is benign (27–33 dB) and predictable,
   whereas the network decides whether it attenuates (Faster R-CNN, Γ̄ = 0.13) or amplifies (EfficientNet-B0,
   Γ̄ = 2.89) the injected noise.
 * For a fleet of 1 000 vehicles, INT8 saves up to 1 GWh, 191 kEUR and 251 t CO₂ per year (Section 3.7).
+
+Layer by layer (SQNR against the FP32 engine, higher is better), FP16 stays near the numerical floor, FP8 has a
+median layer SQNR of 14–22 dB in every network, and INT8 falls to a network-specific plateau (median 5–20 dB:
+about 20 dB for Faster R-CNN, close to 0 dB in parts of EfficientNet-B0):
+
+![Layer-wise SQNR and relative error of INT8, FP8 and FP16 for the five networks](docs/img/R4_propagation.png)
 
 **How to read dB.** SQNR = 10 log₁₀(signal power / noise power); the relative error is r = 10^(−SQNR/20):
 
@@ -162,6 +170,8 @@ propagation to the task head, which one measurement of the quantized network rev
 | YOLOv10-X | 2.6 | 4.3 | 0.69 | 11.5 % | 18.1 % |
 | EfficientNet-B0 | 3.7 | -0.9 | 2.89 | 62.3 % | 28.7 % |
 | DenseNet-121 | 6.1 | 6.6 | 0.90 | 7.5 % | 11.2 % |
+
+![Relative INT8 loss against the head-input SQNR: FP32-only prediction (a) and one measurement (b)](docs/img/S_prediction.png)
 
 The relation between head-input SQNR and loss is empirical (least-squares fit on log₁₀ of the loss, five
 networks): the loss grows as r_h^1.64 (95 % CI 1.05–2.23), between a threshold-flip regime (exponent 1) and a
@@ -323,6 +333,16 @@ reference to five decimals. Latency, energy and the fleet figures derived from t
 TensorRT version; they are compared with a 10 % tolerance and reported as warnings. INT8 accuracies of
 the fragile networks also depend on the order of the calibration images (see the article); the
 calibration set is loaded in a fixed, seeded order.
+
+**Without a GPU.** The LaTeX tables and most figures of the article can be regenerated from the reference
+results on any machine (CPU, Python 3.12, `pip install -e .` or `PYTHONPATH=.`):
+
+```bash
+python scripts/13_tables.py --results reference_results    # all 22 tables, identical to reference_results/tables/tex
+python scripts/12_figures.py --results reference_results   # 12 of 22 figures; the rest need stored activations or images
+```
+
+Both work on a copy in `results/regenerated/`. Scripts 42–44 run on a CPU as well (see above).
 
 **Reference results.** `reference_results/` contains the tables, figures and small intermediate results
 of the run reported in the article (see `reference_results/README.md`). Large artefacts (ONNX models,
