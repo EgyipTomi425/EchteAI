@@ -89,12 +89,20 @@
 \theoremstyle{thmstylethree}%
 \newtheorem{definition}{Definition}%
 
+%% float placement: fewer half-empty pages
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.75}
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{5}
 \raggedbottom
 %%\unnumbered% uncomment this for unnumbered level heads
 
 \begin{document}
 
-\newcommand{\pepfigure}[3]{\begin{figure}[t]\centering
+\newcommand{\pepfigure}[3]{\begin{figure}[tbp]\centering
 \IfFileExists{figures/#1.pdf}{\includegraphics[width=\textwidth]{figures/#1.pdf}}{\fbox{\parbox{0.9\textwidth}{\centering figure \detokenize{#1} not generated yet}}}
 \caption{#2}\label{#3}\end{figure}}
 
@@ -106,13 +114,13 @@
 
 \affil*[1]{\orgdiv{Department of Data Science and Visualization, Faculty of Informatics}, \orgname{University of Debrecen}, \orgaddress{\city{Debrecen}, \country{Hungary}}}
 
-\abstract{\textbf{Background:} Post-training INT8 quantization reduces the inference energy of camera-based perception, but quantized models are accepted on output-level accuracy, which does not show where the quantization error arises, how it propagates and when it causes detection errors.
+\abstract{\textbf{Background:} Post-training INT8 quantization reduces the inference energy of camera-based perception, but quantized models are judged by output accuracy alone, which hides where the error arises and how it propagates.
 
-\textbf{Methods:} Five pretrained detection and classification networks were quantized without retraining and compiled into strict-FP32, FP16, INT8 and FP8 TensorRT engines on an NVIDIA H200. We prove a rounding-noise lemma and propagation bounds for the relative error, test them on layer-wise activations, relate the local deviation to detection errors, measure latency, energy and robustness under eight adverse conditions, and validate a data-free static analysis on two further networks.
+\textbf{Methods:} Five pretrained detection and classification networks were quantized without retraining into FP16, INT8 and FP8 TensorRT engines on an NVIDIA H200. We prove noise and propagation bounds, test them on layer-wise activations, measure accuracy, energy and robustness, and validate a static analysis.
 
-\textbf{Results:} INT8 was 1.6--11.8$\times$ faster than FP32 and 1.1--1.5$\times$ than FP16 and used 72--91\% less energy per image; FP16 was lossless, FP8 lost at most 0.4 points and INT8 between 0.25 mAP and 41 top-1 points. Not network size but the propagation of the injected noise explained this range: one measurement of the quantized head input predicted the relative INT8 loss within a factor of about two (tenfold per 12\,dB, Spearman $\rho=1.0$, $n=5$). FP8 rounding noise does not depend on the activation distribution or the calibrated range, INT8 noise does: from the FP32 parameters alone, a static analysis predicted the FP8 noise per quantizer within 0.14\,dB but the INT8 noise only within 1--6\,dB, and neither the accuracy. INT8 also lost up to 36\% under low contrast and up to 17 points depending on the order of the calibration images, and broke the duplicate suppression of an NMS-free detector; FP8 did not. Keeping 20 convolutions ranked by the activation analysis in FP16 raised EfficientNet-B0 from 24.8\% to 66.0\% top-1. Each doubling of the local deviation raised the odds of a vanishing detection 1.7--4.2-fold.
+\textbf{Results:} INT8 was 1.6--11.8$\times$ faster than FP32 and used 72--91\% less energy; FP16 was lossless, FP8 lost at most 0.4 points and INT8 0.25 mAP to 41 top-1 points. Noise propagation, not network size, explained this range: one measurement of the quantized head input predicted the relative INT8 loss within a factor of about two (tenfold per 12\,dB). From the FP32 parameters alone, the distribution-independent FP8 noise was predicted within 0.14\,dB, the distribution-dependent INT8 noise only within 1--6\,dB. INT8 also lost up to 36\% under low contrast and 17 points with the calibration order, and broke the duplicate suppression of an NMS-free detector; FP8 did not. Keeping 20 ranked layers in FP16 restored EfficientNet-B0 from 24.8\% to 66.0\%.
 
-\textbf{Conclusion:} Quantization error is predictable from FP32 statistics up to a measurable propagation factor, which decides whether INT8 is safe; FP8 is the distribution-independent alternative for the others. For a 1\,000-vehicle fleet the measured INT8 saving is up to 1\,GWh and 251\,t CO$_2$ per year.}
+\textbf{Conclusion:} Quantization error is predictable from FP32 statistics up to a measurable propagation factor, which decides whether INT8 is safe; FP8 is the distribution-independent alternative. For 1\,000 vehicles, INT8 saves up to 1\,GWh and 251\,t CO$_2$ per year.}
 
 \keywords{post-training quantization, INT8, FP8, TensorRT, energy efficiency, explainable AI, sustainable AI, intelligent transportation systems}
 
@@ -137,7 +145,13 @@ In our conference paper we introduced the Precise, Explainable and Provable (PEP
 \item \emph{Static analysis:} a data-free analysis of the FP32 weights and batch-normalisation parameters that estimates the INT8 and FP8 noise of any network without executing it, validated on two networks not used elsewhere (Sections~\ref{sec:static} and~\ref{sec:res-static}).
 \item \emph{Decision:} a fleet cost model with a break-even penalty per quantization-induced error.
 \end{itemize}
-The step-by-step proofs, implementation details and supplementary analyses are given in the Supplementary Information (Appendices~\ref{sec:supp-methods} and~\ref{sec:supp-results}), and the extended tables and figures in its Appendix~\ref{secA1}.
+The complete pipeline, the static analysis tool and all results are openly available at \url{https://github.com/EgyipTomi425/EchteAI}, and every number, table and figure of this article can be regenerated from it. The step-by-step proofs, implementation details and supplementary analyses are given in the Supplementary Information (Appendices~\ref{sec:supp-methods} and~\ref{sec:supp-results}), and the extended tables and figures in its Appendix~\ref{secA1}.
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_pipeline.pdf}
+\caption{PEP-AI validation pipeline. The FP32 model is exported once and turned into an FP16 variant and into INT8 and FP8 variants that share one calibration; every variant is compiled into a strongly typed TensorRT engine and evaluated along five measurement branches. The activation analysis feeds back into quantization (label-free diagnosis and repair, dashed), and the measured energy, accuracy and error rates feed the AIBO scenario.}\label{fig:pipeline}
+\end{figure}
 
 \section{Methods}\label{sec:methods}
 
@@ -145,18 +159,13 @@ The step-by-step proofs, implementation details and supplementary analyses are g
 
 PEP-AI compares the activations of a quantized network with those of its FP32 reference. The three letters stand for three requirements. \emph{Precise} means per-tensor, per-image deviation statistics for every analysed layer of the deployed engine. \emph{Explainable} means an analytical model of where the deviation is injected and how it propagates, supported by activation maps and density plots. \emph{Provable} means that statements are either proved under explicit assumptions (Lemma~\ref{lem:noise}, Corollary~\ref{cor:static}, Propositions~\ref{prop:selective} and~\ref{prop:fixedpoint}) or reported as empirical claims with a stated sample and uncertainty. The pipeline (Fig.~\ref{fig:pipeline}) exports each FP32 model to ONNX, quantizes it into explicit quantize--dequantize (QDQ) graphs and compiles strongly typed TensorRT engines. It then measures accuracy, activation deviation, the link between deviation and errors, latency, energy and robustness, and the layer-level diagnosis is fed back into quantization. Every stage is scripted and seeded, so that the pipeline regenerates every number, figure and table of this article.
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\textwidth]{figures/fig_pipeline.pdf}
-\caption{PEP-AI validation pipeline. The FP32 model is exported once and turned into an FP16 variant and into INT8 and FP8 variants that share one calibration; every variant is compiled into a strongly typed TensorRT engine and evaluated along five measurement branches. The activation analysis feeds back into quantization (label-free diagnosis and repair, dashed), and the measured energy, accuracy and error rates feed the AIBO scenario.}\label{fig:pipeline}
-\end{figure}
 
 \subsection{Models and data}\label{sec:models}
 
 We evaluated five convolutional architectures that cover two-stage detection, one-stage detection and classification (Table~\ref{tab:models}). The two-stage detector is Faster R-CNN with a ResNet-50 FPN backbone~\cite{ren2017faster}, with the torchvision COCO weights and its frozen batch normalisation folded into the convolutions before export. The one-stage detectors are YOLOv10-S and YOLOv10-X~\cite{wang2024yolov10} with their NMS-free one-to-one head. The classifiers are EfficientNet-B0~\cite{tan2019efficientnet} and DenseNet-121~\cite{huang2017densely}, both with torchvision ImageNet weights.
 
 % BEGIN GENERATED M1_models
-\begin{table}[h]
+\begin{table}[htbp]
 \footnotesize\setlength{\tabcolsep}{4pt}
 \caption{Evaluated architectures}\label{tab:models}
 \begin{tabular}{@{}lllrrrrrr@{}}
@@ -179,7 +188,7 @@ DenseNet-121 & cls. & 224$\times$224 & 8.0 & 5.7 & 120 & 32.2 & 16.1 & 9.3 \\
 The detectors were evaluated on the complete COCO 2017 validation split (5\,000 images)~\cite{lin2014microsoft}; the activation analysis and the robustness study use the first 500 images of a seeded permutation of it. For calibration we took 512 seeded images from the COCO 2017 \emph{training} split, so that calibration and evaluation data never overlap. The classifiers were evaluated on ImageNetV2 (matched frequency)~\cite{recht2019imagenet}, which we split with a fixed seed into 1\,000 calibration and 9\,000 evaluation images. Pre-processing follows the reference implementation of each model (Table~\ref{tab:datasets}). About 40\% of all COCO objects belong to traffic-relevant categories.
 
 % BEGIN GENERATED M2_datasets
-\begin{table}[h]
+\begin{table}[htbp]
 \footnotesize\setlength{\tabcolsep}{4pt}
 \caption{Data splits}\label{tab:datasets}
 \begin{tabular}{@{}llrrrrr@{}}
@@ -208,7 +217,7 @@ with one scale per output channel for weights and one scale $s=\alpha/127$ per t
 All variants were compiled with TensorRT~11.3~\cite{tensorrt} into \emph{strongly typed} engines, in which the precision of every layer follows the graph. We disabled TF32, so that the FP32 baseline is true single precision. Static-shape engines were built for batch sizes 1, 6 and 8. For evaluation, Faster R-CNN uses a dynamic-shape engine (input sides 256--1344), while its proposal network and ROI heads run in FP32 PyTorch. We read back from the engine inspector the precision in which every convolution is actually executed. The environment is listed in Table~\ref{tab:hardware}, and implementation details are given in Supplementary Section~\ref{sec:supp-quant}.
 
 % BEGIN GENERATED M3_hardware
-\begin{table}[h]
+\begin{table}[htbp]
 \caption{Hardware and software environment}\label{tab:hardware}
 \begin{tabular}{@{}ll@{}}
 \toprule
@@ -237,7 +246,7 @@ r &= \frac{\lVert e\rVert_2}{\lVert f\rVert_2}, \qquad \mathrm{SQNR} = 10\log_{1
 \end{align}
 with $\eta=10^{-6}$. To give a feeling for the scale: an SQNR of 40, 20 and 0\,dB corresponds to a relative error $r$ of 1\%, 10\% and 100\%, and every 6\,dB is a factor of two in $r$. Task accuracy is the COCO box mAP@[.5:.95] for the detectors~\cite{lin2014microsoft,padilla2021metrics}, complemented for the road-user classes by the AP at IoU 0.5 and by recall and precision at the operating threshold of 0.5, and the top-1 accuracy for the classifiers. $\mathrm{MRE}_\mathrm{proj}$ is the metric of the conference paper; $r$ and SQNR are scale-free and standard in the quantization literature~\cite{nagel2021whitepaper}. Per-image values are aggregated over the 500 analysis images by their median and interquartile range. By \emph{head-input} tensors we mean the tensors consumed by the task head: the five FPN levels, the three YOLOv10 head inputs and the last feature map of the classifiers. For the detectors, we also compute $\mathrm{MRE}_\mathrm{proj}$ separately inside and outside the ground-truth boxes.
 
-\begin{table}[t]
+\begin{table}[htbp]
 \caption{PEP-AI metrics. $f$: FP32 tensor, $q$: quantized tensor, $e=q-f$, $A$: channel-wise maximum projection.}\label{tab:metrics}
 \begin{tabular}{@{}lllp{4.3cm}@{}}
 \toprule
@@ -363,7 +372,7 @@ with electricity price $c_\mathrm{el}$, penalty $\lambda$ per critical error and
 \end{equation}
 is the cost per critical error above which the saving of $p$ no longer pays off, and the lower envelope of $C(\cdot,\lambda)$ gives the cost-optimal precision for every $\lambda$ (Fig.~\ref{fig:aibo}). We count only the GPU inference energy (no host, cooling or idle power), and we do not count false positives, such as duplicate boxes, as critical errors. The absolute figures describe a fleet whose onboard accelerator has the measured energy per image of the H200. For an embedded GPU they scale with that GPU's own energy per image, while the relative savings and the structure of Eqs.~\eqref{eq:aibo}--\eqref{eq:breakeven} carry over.
 
-\begin{figure}[t]
+\begin{figure}[tbp]
 \centering
 \includegraphics[width=0.95\textwidth]{figures/fig_aibo.pdf}
 \caption{AIBO view of quantized perception. Offline PEP-AI validation supplies accuracy, deviation, the critical errors per image $K(p)$ and the measured energy per image $E_\mathrm{img}(p)$ of every precision; combined with fleet parameters, electricity price, grid intensity and a penalty $\lambda$ per critical error, the cost model of Eq.~\eqref{eq:aibo} selects the precision of each deployed engine.}\label{fig:aibo}
@@ -797,7 +806,7 @@ The energy per image at the fleet batch size of 6 is up to 17\% higher than at b
 \section{Extended data}\label{secA1}
 
 % BEGIN GENERATED M5_energy_reference
-\begin{table}[h]
+\begin{table}[htbp]
 \caption{Energy per operation at 45\,nm (Horowitz, ISSCC 2014)}\label{tab:energyref}
 \begin{tabular}{@{}lr@{}}
 \toprule
@@ -818,20 +827,19 @@ Operation & Energy (pJ) \\
 \end{table}
 % END GENERATED M5_energy_reference
 
-\begin{figure}[t]
+\begin{figure}[tbp]
 \centering
 \includegraphics[width=\textwidth]{figures/fig_qdq.pdf}
 \caption{Precision of the deployed INT8 engines. Precision of each architectural stage (left) and the explicit quantize--dequantize pattern that TensorRT fuses into integer kernels (right). Pre-processing and the Faster R-CNN proposal and ROI heads are not part of the quantized engine.}\label{fig:qdq}
 \end{figure}
 
-\begin{figure}[t]
+\begin{figure}[tbp]
 \centering
 \includegraphics[width=0.85\textwidth]{figures/fig_propagation_model.pdf}
 \caption{Error propagation model of the conference paper (Eq.~\ref{eq:attenuation}) and the per-node amplification ratio used to estimate the attenuation operator $\mathcal{A}$ from measured activations.}\label{fig:propmodel}
 \end{figure}
 
 \pepfigure{M_conditions}{Adverse imaging conditions. The eight conditions applied to a COCO val2017 traffic scene (image 336232) at severity 3 of 5. Low light is gamma darkening with Poisson shot noise; the other conditions follow the COCO-C protocol.}{fig:conditions}
-
 
 % BEGIN GENERATED R_placement
 \begin{sidewaystable}
@@ -937,7 +945,7 @@ YOLOv10-X & FP16 & person & 7\,624 & 0.05 & 0.27 & 0.28 & 0.53 & 0.0 \\
 % END GENERATED X_localization
 
 % BEGIN GENERATED X_operating_point
-\begin{table}[h]
+\begin{table}[htbp]
 \footnotesize\setlength{\tabcolsep}{2.5pt}
 \caption{Detection quality for road users (COCO val2017, 5\,000 images)}\label{tab:operating}
 \begin{tabular}{@{}llrrrrrrrr@{}}
@@ -1159,7 +1167,7 @@ DenseNet-121 & INT8 & 1.2 & 2.5 & 19.7 & 34.5 & 19.6 & 2.5 \\
 \end{sidewaystable}
 % END GENERATED X_static_percent
 
-\begin{table}[h]
+\begin{table}[htbp]
 \footnotesize\setlength{\tabcolsep}{3pt}
 \caption{How network structure and quantization choices affect the quantization error}\label{tab:factors}
 \begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}p{3.1cm}>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}p{3.4cm}>{\raggedright\arraybackslash}p{1.4cm}@{}}
@@ -1188,7 +1196,7 @@ Placement and selective precision & removing the largest contributions $\Gamma_{
 \end{table}
 
 % BEGIN GENERATED X_selective
-\begin{table}[h]
+\begin{table}[htbp]
 \footnotesize\setlength{\tabcolsep}{2.5pt}
 \caption{Selective precision: accuracy, latency and energy versus the number $k$ of convolutions kept in FP16}\label{tab:selective}
 \begin{tabular}{@{}llrrrr@{}}
@@ -1234,7 +1242,7 @@ YOLOv10-X & INT8 (base) & 0 & 47.8 & 4.82 & 309.8 \\
 % END GENERATED X_selective
 
 % BEGIN GENERATED X_calibration
-\begin{table}[h]
+\begin{table}[htbp]
 \footnotesize\setlength{\tabcolsep}{2.5pt}
 \caption{Sensitivity of the deployed INT8 accuracy to the calibration sample}\label{tab:calibvar}
 \begin{tabular}{@{}lrrrrrrrr@{}}
@@ -1331,6 +1339,5 @@ DenseNet-121 & FP16 & 62.0 & 0.0 & 2.39 & 70.5 & $-$54\% & 0\% \\
 
 \FloatBarrier
 \end{appendices}
-
 
 \end{document}

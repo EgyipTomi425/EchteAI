@@ -230,13 +230,43 @@ per channel. FP16 adds no relevant noise. The measured losses show what the stat
 network propagates the noise (compare MobileNetV2, which loses 10 % in FP8 although its injected FP8 noise is
 within 0.5 dB of that of ResNet-50).
 
+### Measuring with an image folder (optional)
+
+The static analysis needs no images. With an image folder, `scripts/44_validate_static.py` also runs the model on the
+CPU with simulated INT8 and FP8 quantization at exactly the modelled tensors and reports, next to every static
+estimate, the measured value. This is what the image folder adds:
+
+| | without images (`43_static_analysis.py`) | with unlabelled images (`44 … --no-labels`) | with labelled images (`44 …`) |
+|---|---|---|---|
+| noise per quantizer and for the network | static estimate | static **and measured** | static and measured |
+| deviation at the head input, Γ̄ (attenuation) | range only | **measured** | measured |
+| relative accuracy loss | INT8 bracket, FP8 range | **predicted** from the head input (about ×2) | **measured**, with bootstrap CI |
+
+```bash
+python scripts/44_validate_static.py --torchvision resnet50 --images <folder>               # labelled: one sub-folder per ImageNet class index (as ImageNetV2)
+python scripts/44_validate_static.py --torchvision resnet50 --images <folder> --no-labels   # any images, no labels needed
+python scripts/44_validate_static.py --module my_model.pt --images <folder> --no-labels     # your own model (224x224, ImageNet normalisation)
+```
+
+Example (ResNet-50, ImageNetV2, 128 calibration and 500 evaluation images, about 5 minutes on a CPU):
+
+```text
+resnet50: static prediction vs measurement (dB = SQNR; in brackets the deviation in percent of the signal)
+           per quantizer, static           measured      network, static           measured         head input Gamma_bar
+  INT8         37.2 dB (  1.4 %)  31.8 dB (  2.6 %)    15.8 dB ( 16.2 %)  10.1 dB ( 31.2 %)  16.7 dB ( 14.5 %)      0.22
+  FP8          31.5 dB (  2.7 %)  31.5 dB (  2.7 %)    11.5 dB ( 26.7 %)  11.5 dB ( 26.7 %)  12.0 dB ( 25.0 %)      0.87
+  FP16  injected noise about 73.7 dB per quantizer (0.02 %), negligible
+  relative top-1 loss: INT8 1.1 %, FP8 2.0 % (predicted from the head input: 1.5 %, 3.7 %)
+```
+
+The same run also writes a JSON record and per-quantizer CSV files (`results/tables/static_validation.csv`,
+`results/tables/static/<model>_validation_sites.csv`). With 500 images the FP8 loss of ResNet-50 is 2.0 %; with the
+2 000 images of the article it is 2.8 % [1.3, 4.3], i.e. single-network losses carry a sampling uncertainty of about
+±1.5 points.
+
 ### How far it can be trusted (validation, Section 3.9)
 
-`scripts/44_validate_static.py --torchvision <name> --images <folder>` executes a model on a labelled image
-folder (ImageNet class-index sub-folders, e.g. ImageNetV2) with simulated quantization at exactly the modelled
-tensors. It is only a check of the static analysis. Besides the JSON record it prints a summary per format: the injected noise per quantizer and for
-the whole network (static and measured), the measured head-input deviation and Γ̄, each in dB and in percent of the
-signal, and with labels the relative top-1 loss. ImageNetV2, 128 calibration and 2 000 evaluation images:
+Results of `44_validate_static.py` on ImageNetV2, 128 calibration and 2 000 evaluation images:
 
 | Network | FP8 noise: static − measured | INT8 noise: static − measured (median, MAE) | INT8 loss measured [95 % CI] / predicted* | FP8 loss measured [95 % CI] / predicted* |
 |---|---|---|---|---|

@@ -34,7 +34,7 @@ def write(path, body, cols, caption, label, notes=None):
     env = "sidewaystable" if label in WIDE else "table"
     size = (r"\footnotesize\setlength{\tabcolsep}{4pt}" if label in WIDE | SMALL
             else (r"\footnotesize\setlength{\tabcolsep}{2.5pt}" if label in COMPACT else ""))
-    lines = [rf"\begin{{{env}}}" + ("" if env == "sidewaystable" else "[h]"), size,
+    lines = [rf"\begin{{{env}}}" + ("" if env == "sidewaystable" else "[htbp]"), size,
              rf"\caption{{{caption}}}\label{{{label}}}",
 
              rf"\begin{{tabular}}{{@{{}}{cols}@{{}}}}", r"\toprule", *body, r"\botrule", r"\end{tabular}",
