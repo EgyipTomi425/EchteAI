@@ -1084,7 +1084,7 @@ Width and channel imbalance & one per-tensor scale quantizes narrow channels coa
 Activation function & ReLU uses half of the symmetric grid; SiLU and concatenated ReLU outputs have heavier tails than the Gaussian model & -- & static INT8 prediction too high by 0.4 (MobileNetV2), 4.0 (EfficientNet-B0) and 6.2\,dB (DenseNet-121) \\
 Operators between quantizer and head & sigmoid gates, max pooling after unquantized layers and residual trunks attenuate; non-folded BN amplifies & $a_n$ (Eq.~\eqref{eq:amplification}), Eq.~\eqref{eq:bn} & $\bar\Gamma=0.13$ (Faster R-CNN) to 2.89 (EfficientNet-B0); BN gain median 1.24 \\
 Weights & negligible with per-channel INT8 scales; comparable to the activations per tensor or in FP8 & Lemma~\ref{lem:noise} on $w$ & 37--43\,dB per channel, 26--34\,dB per tensor, 32\,dB in FP8 (seven networks) \\
-Number format & INT8 noise depends on the range and the tails, FP8 and FP16 noise does not & Eqs.~\eqref{eq:sqnr-int8}, \eqref{eq:sqnr-fp} & static FP8 prediction within 0.04--0.14\,dB on four networks \\
+Number format & INT8 noise depends on the range and the tails, FP8 and FP16 noise does not & Eqs.~\eqref{eq:sqnr-int8}, \eqref{eq:sqnr-fp} & static FP8 prediction within 0.02--0.14\,dB on four networks \\
 Parameter count, spatial size & no direct effect & -- & Faster R-CNN (26.8\,M) most robust, EfficientNet-B0 (5.3\,M) most fragile \\
 Decoders and heads & structural errors not visible in the head-input SQNR & -- & quantized TopK; duplicate suppression of YOLOv10-X \\
 \botrule

@@ -103,8 +103,40 @@ How it works: weights are quantized exactly (INT8 per channel and per tensor, FP
 batch-normalised tensor is modelled per channel as N(β, γ²v/(v+ε)) passed through its activation, the range is
 set by minimising the quantization error (Eq. 5), and Lemma 1 gives the injected SQNR; the network value is
 SQNR_add = −10 log₁₀ N − 10 log₁₀⟨ρ²⟩ (−3 dB per doubling of the number N of quantized tensors, dominated by the
-weakest tensors). Width matters only through channel imbalance; parameter count and spatial size do not
-(Table C13 of the article).
+weakest tensors). Width matters only through channel imbalance; parameter count and spatial size do not.
+
+### How network properties change the error (Table C13 of the article)
+
+| Property | Effect on the head-input SQNR | Formula | Example |
+|---|---|---|---|
+| Depth: number N of quantized tensors on the path to the head | −3 dB per doubling of N | SQNR_add = −10 log₁₀ N − 10 log₁₀⟨ρ²⟩ | 62 (Faster R-CNN) vs 187 (YOLOv10-X) quantizers: 4.8 dB |
+| Weakest tensors (outlier channels, depthwise inputs, gates, attention) | dominate the mean noise; −20 dB per decade of κ = α/σ | SQNR ≈ 52.9 dB − 20 log₁₀ κ | EfficientNet-B0: median quantizer 32.5 dB, but mean noise 24.2 dB |
+| Width and channel imbalance | one per-tensor scale quantizes narrow channels coarsely | 10 log₁₀(12 σ_c² / s²) per channel | MobileNetV2 `features.6.conv.3`: 20.9 dB narrowest vs 42.5 dB widest channel |
+| Activation function | ReLU uses half of the symmetric grid; SiLU and concatenated ReLU outputs have heavy tails | – | static INT8 prediction too optimistic by 0.4 (MobileNetV2) to 6.2 dB (DenseNet-121) |
+| Operators between quantizer and head | sigmoid gates, max pooling, residual trunks attenuate; non-folded BN amplifies | a_n = r_out / max r_in; BN gain (Eq. A3) | Γ̄ = 0.13 (Faster R-CNN) to 2.89 (EfficientNet-B0) |
+| Weights | negligible with per-channel INT8 scales; comparable to activations per tensor or in FP8 | Lemma 1 on the weights | 37–43 dB per channel, 26–34 dB per tensor, 32 dB in FP8 |
+| Number format | INT8 noise depends on range and tails; FP8/FP16 noise does not | 6.02 p + 7.44 dB (E4M3: 31.5 dB, FP16: 73.7 dB) | static FP8 prediction within 0.02–0.14 dB |
+| Parameter count, spatial size | no direct effect | – | Faster R-CNN (26.8 M) most robust, EfficientNet-B0 (5.3 M) most fragile |
+| Decoders and heads | structural errors not visible in the SQNR | – | quantized TopK; broken duplicate suppression of YOLOv10-X |
+
+The relative accuracy loss then follows from the head-input SQNR (about ×10 per 12 dB, see below).
+
+**Where the formulas come from.**
+
+* *Derived (proofs in Appendix A of the article):*
+  * **INT8:** the rounding error is uniform within one step s = α/127, so its power is s²/12. This gives
+    SQNR = 10 log₁₀(12·127²) − 20 log₁₀ κ = 52.87 dB − 20 log₁₀ κ.
+  * **Floating point:** the error is relative to the value. Averaging over a log-uniform significand gives
+    6.02 p + 10 log₁₀(8 ln 2) = 6.02 p + 7.44 dB for p significand bits.
+  * **Network level:** noise powers of uncorrelated quantizers add, which gives SQNR_add and the −3 dB per
+    doubling of N (an identity).
+  * **BN gain:** follows from the batch-normalisation parameters.
+* *Checked numerically:* a Monte Carlo simulation reproduces both noise formulas within 0.1 dB.
+* *Fitted:*
+  * **Loss law:** least squares of log₁₀(relative loss) on the head-input SQNR over the five networks
+    (×10 per 12.2 dB, 95 % CI of the exponent 1.05–2.23, leave-one-out check).
+  * **Chain gain g:** least squares over consecutive layers.
+  * **Static range α:** grid search of 60 values per tensor.
 
 ### Results for different quantization schemes
 
