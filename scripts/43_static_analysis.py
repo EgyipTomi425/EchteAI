@@ -23,6 +23,7 @@ measured quantizer statistics.
   python scripts/43_static_analysis.py --model efficientnet_b0
   python scripts/43_static_analysis.py --model all
   python scripts/43_static_analysis.py --torchvision resnet50      # any torchvision classification model
+  python scripts/43_static_analysis.py --module my_model.pt         # any model saved with torch.save(model, path)
 """
 import argparse
 
@@ -309,11 +310,19 @@ def main():
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--model", help="one of the article's models, or 'all'")
     g.add_argument("--torchvision", help="any torchvision classification model with default weights")
+    g.add_argument("--module", help="a whole PyTorch model saved with torch.save(model, path); only parameters and "
+                                    "buffers are read, nothing is executed")
     args = ap.parse_args()
     cfg = load_config()
     torch.set_grad_enabled(False)
     rng = np.random.default_rng(cfg["seed"])
-    if args.torchvision:
+    if args.module:
+        from pathlib import Path
+        model = torch.load(args.module, map_location="cpu", weights_only=False)
+        if hasattr(model, "model") and isinstance(getattr(model, "model"), nn.Module):
+            model = model.model          # e.g. an Ultralytics checkpoint wrapper
+        targets = [(Path(args.module).stem, model.float().eval())]
+    elif args.torchvision:
         import torchvision
         targets = [(args.torchvision, torchvision.models.get_model(args.torchvision, weights="DEFAULT").eval())]
     else:
