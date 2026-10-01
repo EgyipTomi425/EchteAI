@@ -942,6 +942,52 @@ def fig_noise_validation(cfg, out):
     save(fig, out / "S_noise_validation")
 
 
+def fig_prediction(cfg, out):
+    """Relative INT8 accuracy loss against the head-input SQNR predicted from FP32 statistics (a) and measured once on
+    the quantized engine (b), with log-linear fits; FP8 for comparison in (a)."""
+    t = results_dir(cfg, "tables")
+    pf_p, acc_p, f8_p = t / "propagation_factor.csv", t / "accuracy.csv", t / "quantizer_snr_fp8_summary.csv"
+    if not (pf_p.exists() and acc_p.exists()):
+        return
+    pf = pd.read_csv(pf_p).set_index("model")
+    acc = pd.read_csv(acc_p).set_index(["model", "precision"])
+    f8 = pd.read_csv(f8_p).set_index("model") if f8_p.exists() else None
+    models = [m for m in ORDER if m in pf.index]
+
+    def rel_loss(m, prec):
+        metric = "top1" if pd.notna(acc.loc[(m, "fp32")].get("top1")) else "mAP"
+        ref = acc.loc[(m, "fp32"), metric]
+        return 100 * (ref - acc.loc[(m, prec), metric]) / ref
+
+    loss = np.array([rel_loss(m, "int8") for m in models])
+    fig, axes = plt.subplots(1, 2, figsize=(9.0, 3.6), sharey=True)
+    for ax, col, title in ((axes[0], "sqnr_add_db", "a  predicted from FP32 statistics ($\\Gamma=1$)"),
+                           (axes[1], "sqnr_head_db", "b  measured once on the INT8 engine")):
+        x = pf.loc[models, col].values
+        b, a = np.polyfit(x, np.log10(loss), 1)
+        r2 = 1 - np.sum((np.log10(loss) - (a + b * x)) ** 2) / np.sum((np.log10(loss) - np.log10(loss).mean()) ** 2)
+        xs = np.linspace(min(x.min(), 0) - 1, max(x.max(), 15) + 1, 50)
+        ax.plot(xs, 10 ** (a + b * xs), color=MUTED, linewidth=1, linestyle="--",
+                label=f"fit: $\\times$10 per {-1 / b:.1f} dB, $R^2$ = {r2:.2f}")
+        for m, xv, yv in zip(models, x, loss):
+            ax.scatter(xv, yv, s=36, color=PRECISION_COLORS["int8"], zorder=3, edgecolor="white", linewidth=0.6)
+            ax.annotate(MODEL_LABELS[m].replace(" R50-FPN", ""), (xv, yv), textcoords="offset points", xytext=(5, 3),
+                        fontsize=6.5, color=INK_2)
+        if col == "sqnr_add_db" and f8 is not None:
+            x8 = [f8.loc[m, "additive_gamma1_sqnr_db"] for m in models if m in f8.index]
+            y8 = [max(rel_loss(m, "fp8"), 0.05) for m in models if m in f8.index]
+            ax.scatter(x8, y8, s=30, marker="s", color=PRECISION_COLORS["fp8"], zorder=3, edgecolor="white",
+                       linewidth=0.6, label="FP8 (same models)")
+        ax.set_yscale("log")
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:g}"))
+        ax.set_xlabel("head-input SQNR (dB)")
+        ax.set_title(title, loc="left")
+        ax.legend(fontsize=6.5, loc="upper right")
+    axes[0].set_ylabel("relative accuracy loss vs FP32 (%)")
+    fig.tight_layout()
+    save(fig, out / "S_prediction")
+
+
 CONTRAST_FACTORS = {1: 0.4, 2: 0.3, 3: 0.2, 4: 0.1, 5: 0.05}     # imagecorruptions contrast()
 
 
@@ -1113,6 +1159,6 @@ if __name__ == "__main__":
     out = results_dir(cfg, "figures")
     for f in (fig_activation_maps, fig_hexbin, fig_propagation, fig_operator_amplification, fig_speed,
               fig_selective, fig_surface, fig_robustness, fig_risk, fig_aibo, fig_energy_surface,
-              fig_layer_profile, fig_conditions, fig_noise_model, fig_static_scale, fig_noise_validation, fig_qualitative, fig_pareto, fig_recursion):
+              fig_layer_profile, fig_conditions, fig_noise_model, fig_static_scale, fig_noise_validation, fig_qualitative, fig_pareto, fig_recursion, fig_prediction):
         f(cfg, out)
         print("done:", f.__name__, flush=True)

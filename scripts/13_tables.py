@@ -23,7 +23,7 @@ HOROWITZ = [("8-bit integer add", 0.03), ("32-bit integer add", 0.1), ("16-bit f
 
 # Tables wider than the text block go on a landscape page (Springer template: sidewaystable) in a smaller font.
 WIDE = {"tab:accuracy", "tab:layerstats", "tab:aibo", "tab:engines", "tab:localization", "tab:propagation",
-        "tab:selective", "tab:placement", "tab:operating", "tab:duplicates", "tab:calibvar", "tab:calibmethods", "tab:deployment", "tab:modelcheck", "tab:formulas"}
+        "tab:selective", "tab:placement", "tab:operating", "tab:duplicates", "tab:calibvar", "tab:calibmethods", "tab:deployment", "tab:modelcheck", "tab:formulas", "tab:prediction"}
 SMALL = {"tab:models", "tab:datasets"}
 
 
@@ -724,12 +724,95 @@ def table_model_check(cfg, out, models=("yolov10s", "yolov10x"), severity=5):
           "cumulative change of the layer SQNR, which also contains the shift of the operating point.")
 
 
+PREDICTION_FIT_SOURCES = {"sqnr_add_db": "FP32 statistics only", "sqnr_head_db": "one quantized measurement"}
+
+
+def exact_spearman_p(x, y):
+    """One-sided exact p-value of Spearman's rho (all permutations; small n)."""
+    from itertools import permutations
+    rx, ry = pd.Series(x).rank().values, pd.Series(y).rank().values
+    obs = np.corrcoef(rx, ry)[0, 1]
+    vals = [np.corrcoef(rx, np.array(p))[0, 1] for p in permutations(ry)]
+    return obs, float(np.mean([v >= obs - 1e-12 for v in vals])) if obs > 0 else float(np.mean([v <= obs + 1e-12 for v in vals]))
+
+
+def table_prediction(cfg, out):
+    """Extended data: prediction of INT8 tolerance for all five networks, from FP32 statistics alone and after one
+    measurement of the quantized head input, with leave-one-out predictions of the relative INT8 loss."""
+    t = results_dir(cfg, "tables")
+    need = ["quantizer_snr.csv", "quantizer_snr_fp8.csv", "quantizer_snr_summary.csv", "quantizer_snr_fp8_summary.csv",
+            "propagation_factor.csv", "accuracy.csv"]
+    if not all((t / n).exists() for n in need):
+        return
+    q, q8 = pd.read_csv(t / "quantizer_snr.csv"), pd.read_csv(t / "quantizer_snr_fp8.csv")
+    summ, summ8 = (pd.read_csv(t / n).set_index("model") for n in ("quantizer_snr_summary.csv",
+                                                                   "quantizer_snr_fp8_summary.csv"))
+    pf = pd.read_csv(t / "propagation_factor.csv").set_index("model")
+    acc = pd.read_csv(t / "accuracy.csv").set_index(["model", "precision"])
+    rows = []
+    for m in [m for m in ORDER if m in pf.index]:
+        up = q[(q.model == m) & q.upstream_of_head.astype(bool)]
+        up8 = q8[(q8.model == m) & q8.upstream_of_head.astype(bool)]
+        metric = "top1" if pd.notna(acc.loc[(m, "fp32")].get("top1")) else "mAP"
+        ref = acc.loc[(m, "fp32"), metric]
+        rows.append({"model": m, "quantizers": len(up),
+                     "int8_pred_median_db": up.sqnr_pred_db.median(), "int8_exact_median_db": up.sqnr_inj_db.median(),
+                     "int8_mae_db": summ.loc[m, "pred_vs_inj_mae_db"],
+                     "fp8_pred_median_db": up8.sqnr_pred_db.median(), "fp8_exact_median_db": up8.sqnr_inj_db.median(),
+                     "sqnr_add_db": pf.loc[m, "sqnr_add_db"], "sqnr_add_fp8_db": summ8.loc[m, "additive_gamma1_sqnr_db"],
+                     "sqnr_head_db": pf.loc[m, "sqnr_head_db"], "gamma_bar": pf.loc[m, "gamma_bar"],
+                     "int8_rel_loss": (ref - acc.loc[(m, "int8"), metric]) / ref,
+                     "fp8_rel_loss": (ref - acc.loc[(m, "fp8"), metric]) / ref})
+    d = pd.DataFrame(rows)
+    fits = []
+    y = np.log10(d.int8_rel_loss.values)
+    for x_col, source in PREDICTION_FIT_SOURCES.items():
+        x = d[x_col].values
+        b, a = np.polyfit(x, y, 1)
+        r2 = 1 - np.sum((y - (a + b * x)) ** 2) / np.sum((y - y.mean()) ** 2)
+        loo = np.array([np.polyval(np.polyfit(np.delete(x, k), np.delete(y, k), 1), x[k]) for k in range(len(x))])
+        d[f"loo_rel_loss_from_{x_col}"] = 10 ** loo
+        rho, p = exact_spearman_p(-x, d.int8_rel_loss.values)
+        fits.append({"predictor": x_col, "source": source, "slope_log10_per_db": b, "intercept": a,
+                     "db_per_decade": -1 / b, "r2": r2, "spearman_rho": rho, "exact_p_one_sided": p,
+                     "loo_max_factor": float(np.max(10 ** np.abs(loo - y))),
+                     "loo_median_factor": float(np.median(10 ** np.abs(loo - y)))})
+    rho_g, p_g = exact_spearman_p(d.gamma_bar.values, d.int8_rel_loss.values)
+    fits.append({"predictor": "gamma_bar", "source": "one quantized measurement", "spearman_rho": rho_g,
+                 "exact_p_one_sided": p_g})
+    d.to_csv(t / "prediction.csv", index=False)
+    pd.DataFrame(fits).to_csv(t / "prediction_fit.csv", index=False)
+    body = [r"Model & Quantizers & \multicolumn{3}{c}{INT8 quantizer SQNR (dB)} & FP8 quantizer & "
+            r"\multicolumn{2}{c}{SQNR$_\text{add}$ (dB)} & SQNR$_h$ & $\bar\Gamma$ & \multicolumn{3}{c}{Relative INT8 loss (\%)} & FP8 loss \\",
+            r"\cmidrule{3-5}\cmidrule{7-8}\cmidrule{12-14}",
+            r" & & Eq.~\eqref{eq:sqnr-int8} & exact & MAE & SQNR (dB) & INT8 & FP8 & (dB) & & measured & "
+            r"LOO, SQNR$_\text{add}$ & LOO, SQNR$_h$ & (\%) \\", r"\midrule"]
+    for _, r in d.iterrows():
+        body.append(f"{MODEL_LABELS[r.model]} & {r.quantizers} & {fmt(r.int8_pred_median_db)} & "
+                    f"{fmt(r.int8_exact_median_db)} & {fmt(r.int8_mae_db)} & {fmt(r.fp8_exact_median_db)} & "
+                    f"{fmt(r.sqnr_add_db)} & {fmt(r.sqnr_add_fp8_db)} & {signed(r.sqnr_head_db) if r.sqnr_head_db < 0 else fmt(r.sqnr_head_db)} & "
+                    f"{r.gamma_bar:.2f} & {100 * r.int8_rel_loss:.1f} & {100 * r.loo_rel_loss_from_sqnr_add_db:.1f} & "
+                    f"{100 * r.loo_rel_loss_from_sqnr_head_db:.1f} & {100 * r.fp8_rel_loss:.1f} \\\\")
+    f_add, f_head = fits[0], fits[1]
+    write(out / "X_prediction.tex", body, "lrrrrrrrrrrrrr",
+          "Prediction of INT8 tolerance for the five networks", "tab:prediction",
+          "Quantizer SQNR: median over the quantizers upstream of the head input; Eq.~\\eqref{eq:sqnr-int8} from the "
+          "normalised range, exact from the calibrated scale applied to FP32 activations (32 images); MAE: mean "
+          "absolute difference for quantizers without clipping; the FP8 prediction of Eq.~\\eqref{eq:sqnr-fp} is 31.5\\,dB. "
+          "SQNR$_\\text{add}$: Eq.~\\eqref{eq:gammabar} with unit propagation factors (FP32 statistics only); "
+          "SQNR$_h$: measured head-input SQNR of the INT8 engine (one measurement). Relative loss: accuracy loss of "
+          "the deployed engine divided by the FP32 accuracy (mAP or top-1). LOO: leave-one-out prediction of "
+          f"$\\log_{{10}}$ of the relative loss from a straight line fitted to the other four networks "
+          f"(all five: {f_add['db_per_decade']:.1f}\\,dB per decade, $R^2={f_add['r2']:.2f}$ for SQNR$_\\text{{add}}$; "
+          f"{f_head['db_per_decade']:.1f}\\,dB per decade, $R^2={f_head['r2']:.2f}$ for SQNR$_h$).")
+
+
 if __name__ == "__main__":
     cfg = load_config()
     out = results_dir(cfg, "tables", "tex")
     for f in (table_models, table_datasets, table_energy_reference, table_placement, table_accuracy_speed, table_layer_stats, table_aibo,
               table_hardware, table_engines, table_localization, table_propagation, table_selective,
               table_calibration_variability, table_operating_point, table_duplicates,
-              table_calibration_methods, table_deployment, table_formulas, table_model_check):
+              table_calibration_methods, table_deployment, table_formulas, table_model_check, table_prediction):
         f(cfg, out)
         print("done:", f.__name__, flush=True)

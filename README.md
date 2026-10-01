@@ -37,6 +37,36 @@ conditions (COCO-C and low light); label-free diagnosis and repair (placement, c
 precision); quantization-noise and propagation model checks; monocular distance error; AIBO fleet
 energy, cost and CO₂ scenario.
 
+## Main result: predicting INT8 tolerance (Section 3.8 of the article)
+
+The quantization error of a network splits into the noise injected by each quantizer, which FP32
+statistics predict, and its propagation to the task head, which one measurement of the quantized
+network reveals. This gives a procedure that tells, before deployment, whether INT8 is safe:
+
+| Step | What is computed | Formula (INT8 / FP8) | Accuracy on the five networks |
+|---|---|---|---|
+| 1 | noise of each quantizer from FP32 activations and calibrated scales | SQNR ≈ 52.9 dB − 20 log₁₀ κ / 31.5 dB | median within 0.6–2.9 dB (INT8), 0.02 dB (FP8) |
+| 2 | head-input SQNR with unit propagation factors (no quantized model) | SQNR_add = −10 log₁₀ Σ ρₙ² | ranks the INT8 loss with ρ = 0.8: screening |
+| 3 | one measurement of the quantized head input → propagation factor | Γ̄ = 10^((SQNR_add − SQNR_h)/10) | ranks the INT8 loss exactly (ρ = 1.0); loss ×10 per 12 dB, leave-one-out within ×1.3–2.2 |
+| 4 | plateau over depth; effect of a signal change after calibration | SQNR∞ = −20 log₁₀ ρ + 10 log₁₀(1 − g²); ΔSQNR = 20 log₁₀ c / 0 | within 0.3 dB; full shift underestimated by 2.9–4.5 dB |
+| 5 | format and layers | the lowest precision within the accepted loss; FP16 layers by Γₙ→ₕ ρₙ² | measured ranking needed for single layers |
+
+How to read the numbers: an SQNR of 40, 20 and 0 dB is a relative error of 1 %, 10 % and 100 %;
+6 dB is a factor of two. Example: Faster R-CNN (Γ̄ = 0.13, head-input SQNR 21.5 dB) loses 0.7 % in
+INT8; EfficientNet-B0 injects no more noise than YOLOv10-X but amplifies it (Γ̄ = 2.89) and loses
+62 %, whereas FP8 keeps every network within 1 % of FP32. The calibration rests on five networks.
+
+```bash
+python scripts/26_quantizer_snr.py                                       # quantizer table (FP32 + scales only)
+python scripts/42_predict_int8.py --model yolov10x                       # step 2: screening
+python scripts/42_predict_int8.py --model yolov10x --head-sqnr 4.25      # step 3: after one measurement
+python scripts/42_predict_int8.py --model yolov10x --head-sqnr 4.25 --leave-out   # without this model in the fit
+```
+
+Without arguments for `--tables`, the script uses `results/tables` if present and otherwise the
+reference tables, so it runs on a fresh clone. Tables C7–C9 and Fig. C3 of the article contain the
+formulas, the worked example and the predictions for all five networks.
+
 ## Setup
 
 ```bash
@@ -98,6 +128,7 @@ randomness is seeded from it.
 | Engines of the DenseNet-121 variant with batch normalisation in FP16 | `39_build_extra.py` (then `04_benchmark.py`, `36_energy_graph.py`) | `tables/benchmark_extra.csv` |
 | Comparison of a new run with the reference results | `40_compare_results.py` | report (exit status 1 on accuracy deviations) |
 | TopK / DFL placement ablation of the YOLOv10 head | `41_topk_ablation.py` | `tables/ablation_topk.csv` |
+| INT8 tolerance of a (new) network from its quantizer table and, optionally, one head-input measurement (Section 3.8) | `42_predict_int8.py` | `tables/predict_<model>.csv` |
 
 ## Reproducing the results
 
