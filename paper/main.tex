@@ -455,7 +455,7 @@ The additive model ties these observations to the fidelity of the network as a w
 
 \pepfigure{R1_activation_maps}{FP32 and INT8 activation maps of Faster R-CNN. Channel-wise maximum activations of the Faster R-CNN backbone and FPN, averaged over all convolutions, for FP32 and INT8 on a shared colour scale, with the absolute and relative deviation. Grey contours: ground-truth boxes.}{fig:maps}
 
-\pepfigure{R2_hexbin}{Density of INT8 deviation versus FP32 activation on symmetric-logarithmic axes (128 random elements per tensor and image, 500 images per model).}{fig:hexbin}
+\pepfigure{R2_hexbin}{Density of INT8 deviation versus FP32 activation. Symmetric-logarithmic axes (128 random elements per tensor and image, 500 images per model).}{fig:hexbin}
 
 \pepfigure{R4_propagation}{Layer-wise propagation of quantization deviation. SQNR (top) and median relative error of the channel-max projection (bottom) of every convolution, ordered by depth, for INT8 (median over 500 images, band: interquartile range), FP8 (100 images) and FP16 (500 images; Faster R-CNN 100). Grey lines and labels: network stages.}{fig:propagation}
 
@@ -839,7 +839,7 @@ Operation & Energy (pJ) \\
 \begin{figure}[tbp]
 \centering
 \includegraphics[width=0.85\textwidth]{figures/fig_propagation_model.pdf}
-\caption{Error propagation model of the conference paper (Eq.~\ref{eq:attenuation}) and the per-node amplification ratio used to estimate the attenuation operator $\mathcal{A}$ from measured activations.}\label{fig:propmodel}
+\caption{Error propagation model of the conference paper. Model of Eq.~\ref{eq:attenuation} and the per-node amplification ratio used to estimate the attenuation operator $\mathcal{A}$ from measured activations.}\label{fig:propmodel}
 \end{figure}
 
 \pepfigure{M_conditions}{Adverse imaging conditions. The eight conditions applied to a COCO val2017 traffic scene (image 336232) at severity 3 of 5. Low light is gamma darkening with Poisson shot noise; the other conditions follow the COCO-C protocol.}{fig:conditions}
@@ -1330,11 +1330,11 @@ DenseNet-121 & FP16 & 62.0 & 0.0 & 2.39 & 70.5 & $-$54\% & 0\% \\
 
 \pepfigure{S_qualitative}{Qualitative example under reduced contrast. YOLOv10-X on COCO image 356612, clean (top) and at contrast severity 4 (bottom); the scene was selected automatically as the one with the most INT8-specific vanishing detections among the first 200 analysis images with at least four road users. Left: FP32 detections (score $\geq0.5$). Middle and right: INT8 (FP32 fallback) and FP8 detections over the head-input $\mathrm{MRE}_\mathrm{proj}$ map (mean of the three pyramid levels); dashed: FP32 detections without a counterpart (IoU $\geq0.5$, score $\geq0.3$).}{fig:qualitative}
 
-\pepfigure{R_risk}{Local deviation as a predictor of vanishing detections, i.e.\ FP32 detections above the 0.5 threshold without an INT8 counterpart down to a score of 0.3 (COCO val2017, 5\,000 images, INT8 with FP32 fallback). \textbf{a} ROC curves of the median $\mathrm{MRE}_\mathrm{proj}$ inside the detection box. \textbf{b} Share of vanishing detections per decile of the local deviation; dashed lines: data-derived threshold of each architecture (maximum Youden index).}{fig:risk}
+\pepfigure{R_risk}{Local deviation as a predictor of vanishing detections. Vanishing detections are FP32 detections above the 0.5 threshold without an INT8 counterpart down to a score of 0.3 (COCO val2017, 5\,000 images, INT8 with FP32 fallback). \textbf{a} ROC curves of the median $\mathrm{MRE}_\mathrm{proj}$ inside the detection box. \textbf{b} Share of vanishing detections per decile of the local deviation; dashed lines: data-derived threshold of each architecture (maximum Youden index).}{fig:risk}
 
 \pepfigure{S_robustness}{Detection accuracy under adverse conditions. Box mAP of the FP32, FP16, INT8 and FP8 detectors under the eight adverse conditions at severities 0 (clean) to 5 (500 COCO val2017 images; FP8 evaluated for YOLOv10 under fog and contrast). FP16 coincides with FP32 in every panel, and FP8 stays close to FP32 (Supplementary Section~\ref{sec:supp-res-rob}).}{fig:robustness}
 
-\pepfigure{S_static_scale}{Test of the static-scale prediction under reduced contrast for YOLOv10-S and YOLOv10-X in INT8 (FP32 fallback) and FP8. Lines: measured change of the SQNR of every convolution output relative to the clean images (median over the same 100 images; cumulative deviation). Markers: change of the noise injected at the input quantizer of each convolution, computed exactly from FP32 activations and the calibrated scales (32 images), i.e.\ Eq.~\eqref{eq:static} with the measured activation attenuation.}{fig:staticscale}
+\pepfigure{S_static_scale}{Test of the static-scale prediction under reduced contrast. YOLOv10-S and YOLOv10-X in INT8 (FP32 fallback) and FP8. Lines: measured change of the SQNR of every convolution output relative to the clean images (median over the same 100 images; cumulative deviation). Markers: change of the noise injected at the input quantizer of each convolution, computed exactly from FP32 activations and the calibrated scales (32 images), i.e.\ Eq.~\eqref{eq:static} with the measured activation attenuation.}{fig:staticscale}
 
 \pepfigure{S_severity_surface}{Deviation of Faster R-CNN under fog and low light. Median $\mathrm{MRE}_\mathrm{proj}$ of every INT8 Faster R-CNN convolution (backbone and FPN, ordered by depth) as a function of the severity of fog and low light, on a shared colour scale (the same 100 images at every severity; INT8 with FP32 fallback).}{fig:surface}
 
