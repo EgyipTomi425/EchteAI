@@ -14,6 +14,30 @@ tells from the FP32 parameters alone how much noise INT8, FP8 and FP16 inject in
 complete pipeline that produced every number of the article (journal extension of the CITDS 2026 paper,
 whose code is kept under the tag [`citds-2026`](https://github.com/EgyipTomi425/EchteAI/tree/citds-2026)).
 
+## Key findings and what to watch for
+
+1. **The error has two parts.** The noise each quantizer injects is predictable from FP32 statistics. How the
+   network propagates it to the task head (the factor Γ̄, from 0.13 attenuating to 2.89 amplifying) needs one
+   measurement on unlabelled images. The propagation, not the size of the network, decides the INT8 loss:
+   Faster R-CNN (26.8 M parameters) lost 0.25 mAP, EfficientNet-B0 (5.3 M) lost 41 top-1 points.
+2. **FP8 noise does not depend on the data, INT8 noise does.** FP8 E4M3 injects about 31.5 dB (2.7 %) per quantizer
+   whatever the activations look like, so the static analysis predicts it within 0.02–0.14 dB without images. INT8
+   noise depends on the range and the tails, and the static estimate is 4–6 dB too optimistic for SiLU and ReLU outputs.
+3. **Noise is not accuracy.** A 25 % deviation of the head-input features cost ResNet-50 only 2.8 % of its top-1
+   accuracy. Accuracy needs either labels or the measured head-input SQNR (loss ×10 per 12 dB, within about ×2).
+4. **INT8 is fragile in ways that aggregate accuracy hides:**
+   * the result depends on the order of the calibration images (EfficientNet-B0: 24.8 % or 41.7 %);
+   * low contrast costs INT8 up to 36 % but FP8 at most 1.9 %, because the scales are fixed at calibration;
+   * a NMS-free detector loses its duplicate suppression (YOLOv10-X: 15.2 % duplicate boxes).
+5. **Quantize weights per channel.** Per-tensor INT8 weight scales add 4–8.5 dB of noise; for FP8 it does not matter.
+6. **Repair is local.** Where the damage sits in a few layers, keeping them in FP16 restores the accuracy
+   (EfficientNet-B0 24.8 % → 66.0 %, DenseNet-121 57.4 % → 61.6 %); where it is spread out (YOLOv10-S), only FP8 or
+   another range setting helps.
+7. **Judge single detections locally.** The deviation inside a box predicts whether that detection vanishes (odds
+   ratio 1.7–4.2 per doubling); the image-level deviation does not.
+8. **What to use:** INT8 for networks that attenuate the noise (check with one measurement), FP8 for the others where
+   the hardware supports it (Hopper/Ada/Blackwell, not e.g. DRIVE Orin), FP16 as the lossless fallback.
+
 ## Results in brief
 
 Measured on an NVIDIA H200 with TensorRT 11.3 (COCO val2017 box mAP, ImageNetV2 top-1; Table 5 of the article):
