@@ -204,6 +204,13 @@ def run(model_fn, name, images, n_calib, n_eval, seed, labels, preprocess):
             results[f"{fmt}_top1"] = float((logits.argmax(1).numpy() == y).mean())
             results[f"{fmt}_rel_loss"] = (results["fp32_top1"] - results[f"{fmt}_top1"]) / results["fp32_top1"]
             results[f"{fmt}_top1_agreement"] = float((logits.argmax(1) == logits32.argmax(1)).float().mean())
+            c32, cq = logits32.argmax(1).numpy() == y, logits.argmax(1).numpy() == y
+            brng = np.random.default_rng(seed)
+            boots = []
+            for _ in range(1000):     # paired bootstrap over the evaluation images
+                idx = brng.integers(0, len(y), len(y))
+                boots.append((c32[idx].mean() - cq[idx].mean()) / c32[idx].mean())
+            results[f"{fmt}_rel_loss_lo"], results[f"{fmt}_rel_loss_hi"] = map(float, np.percentile(boots, [2.5, 97.5]))
         col = "sqnr_int8_db" if fmt == "int8" else "sqnr_fp8_db"
         for _, r in acts.iterrows():
             if r.tensor in inj:
@@ -226,9 +233,11 @@ def run(model_fn, name, images, n_calib, n_eval, seed, labels, preprocess):
         pred_p = CODE_ROOT / "reference_results" / "tables" / "prediction.csv"
     cal = pd.read_csv(pred_p)
     b, a = np.polyfit(cal.sqnr_head_db, np.log10(cal.int8_rel_loss), 1)
-    results["int8_rel_loss_predicted"] = float(10 ** (a + b * results["int8_sqnr_head_db"]))
-    if labels:
-        results["int8_prediction_factor"] = float(results["int8_rel_loss_predicted"] / max(results["int8_rel_loss"], 1e-6))
+    for fmt in ("int8", "fp8"):
+        results[f"{fmt}_rel_loss_predicted"] = float(10 ** (a + b * results[f"{fmt}_sqnr_head_db"]))
+        if labels:
+            lo, hi = results[f"{fmt}_rel_loss_lo"], results[f"{fmt}_rel_loss_hi"]
+            results[f"{fmt}_prediction_within_ci"] = bool(lo <= results[f"{fmt}_rel_loss_predicted"] <= hi)
     return results, ps
 
 
