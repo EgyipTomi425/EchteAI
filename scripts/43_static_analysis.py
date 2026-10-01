@@ -370,12 +370,21 @@ def report_scenarios(s, layers, acts):
             print(f"                     {m:24s} {x8:5.1f} dB   {loss8:5.1f}%")
         if not placed:
             print(f"                 --> {s['model']:24s} {v8:5.1f} dB")
-        print("               All five stayed within about 1 % in FP8, unrelated to their static FP8 SQNR_add; a network that "
-              "amplifies")
-        print("               the noise can still lose more (MobileNetV2: 10 % in the simulated FP8 check, Gamma_bar 3.3).")
+        fp8 = [r[4] for r in refs]
+        sim = []
+        from pepai.config import CODE_ROOT
+        val = CODE_ROOT / "reference_results" / "tables" / "static_validation.csv"
+        if val.exists():
+            sim = list(100 * pd.read_csv(val)["fp8_rel_loss"].values)
+        print(f"               FP8 range from the measured networks: {min(fp8):.1f}-{max(fp8):.1f} % relative loss with TensorRT"
+              + (f", {min(sim):.1f}-{max(sim):.1f} % in the" if sim else ""))
+        if sim:
+            print("               simulated check of four classifiers. Expect a loss in this range; the static FP8 SQNR_add does not")
+            print("               order the networks (the measured losses are unrelated to it), and a network that amplifies the")
+            print("               noise reaches the upper end (MobileNetV2: 10.3 %, Gamma_bar 3.3).")
         print("               The static analysis ranks networks (Spearman 0.9 on the five) but does not see how a "
               "network propagates the noise;")
-        print("               it gives no fitted accuracy number, only the INT8 bracket above. For the relative loss: one measurement "
+        print("               it gives no fitted accuracy number, only the INT8 bracket and the FP8 range above. For the relative loss: one measurement "
               "of the quantized head input")
         print("               (42_predict_int8.py, within about x2) or a direct check (44_validate_static.py).")
     return rows, refs

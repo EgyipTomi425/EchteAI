@@ -122,10 +122,12 @@ Example output (ResNet-50, a network not used elsewhere in the article):
                      yolov10s                   8.7 dB     0.9%
                      densenet121                7.8 dB     0.5%
                      yolov10x                   6.3 dB     0.3%
-               All five stayed within about 1 % in FP8, unrelated to their static FP8 SQNR_add; a network that amplifies
-               the noise can still lose more (MobileNetV2: 10 % in the simulated FP8 check, Gamma_bar 3.3).
+               FP8 range from the measured networks: 0.3-1.0 % relative loss with TensorRT, 0.6-10.3 % in the
+               simulated check of four classifiers. Expect a loss in this range; the static FP8 SQNR_add does not
+               order the networks (the measured losses are unrelated to it), and a network that amplifies the
+               noise reaches the upper end (MobileNetV2: 10.3 %, Gamma_bar 3.3).
                The static analysis ranks networks (Spearman 0.9 on the five) but does not see how a network propagates the noise;
-               it gives no fitted accuracy number, only the INT8 bracket above. For the relative loss: one measurement of the quantized head input
+               it gives no fitted accuracy number, only the INT8 bracket and the FP8 range above. For the relative loss: one measurement of the quantized head input
                (42_predict_int8.py, within about x2) or a direct check (44_validate_static.py).
 ```
 
