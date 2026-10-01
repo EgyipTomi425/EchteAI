@@ -89,7 +89,8 @@ Example output (ResNet-50, a network not used elsewhere in the article):
 === resnet50: 25.5 M parameters, 54 conv/linear layers (0 depthwise)
   (dB values are SQNR; in brackets the relative error r = 10^(-SQNR/20) in percent of the signal)
   weights      INT8 per channel: median 37.4 dB (1.3 %), worst 25.7 dB (5.2 %)
-               INT8 per tensor:  median 26.1 dB (4.9 %), worst 19.7 dB (10.4 %); FP8: median 31.9 dB (2.6 %)
+               INT8 per tensor:  median 26.1 dB (4.9 %), worst 19.7 dB (10.4 %)
+               FP8 per channel:  median 31.9 dB (2.6 %), worst 31.6 dB (2.6 %)  (per-tensor FP8 is about the same: the relative error of E4M3 does not depend on the scale)
   activations  53 BN-modelled quantizers; channel spread median 2.6x (max 21x); MSE-optimal kappa median 7.4
                noise injected per quantizer: INT8 median 38.0 dB (1.3 %), worst 30.4 dB (3.0 %); FP8 31.5 dB (2.7 %)
   screening    all activation quantizers together (unit propagation factors, no data): INT8 19.0 dB (11.2 %), FP8 14.3 dB (19.3 %)

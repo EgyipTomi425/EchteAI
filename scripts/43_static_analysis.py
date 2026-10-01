@@ -248,7 +248,7 @@ def summarise(name, layers, acts, bns, extra):
          "w_int8_per_channel_min_db": layers.w_int8_per_channel_db.min(),
          "w_int8_per_tensor_median_db": layers.w_int8_per_tensor_db.median(),
          "w_int8_per_tensor_min_db": layers.w_int8_per_tensor_db.min(),
-         "w_fp8_median_db": layers.w_fp8_db.median(),
+         "w_fp8_median_db": layers.w_fp8_db.median(), "w_fp8_min_db": layers.w_fp8_db.min(),
          "act_quantizers": len(acts), "act_channel_spread_median": acts.channel_spread.median(),
          "act_channel_spread_max": acts.channel_spread.replace(np.inf, np.nan).max(),
          "act_kappa_median": acts.kappa.median(), "act_int8_sqnr_median_db": acts.sqnr_int8_db.median(),
@@ -272,7 +272,9 @@ def report(s, layers, acts, bns):
     print(f"  weights      INT8 per channel: median {pct(s['w_int8_per_channel_median_db'])}, "
           f"worst {pct(s['w_int8_per_channel_min_db'])}")
     print(f"               INT8 per tensor:  median {pct(s['w_int8_per_tensor_median_db'])}, "
-          f"worst {pct(s['w_int8_per_tensor_min_db'])}; FP8: median {pct(s['w_fp8_median_db'])}")
+          f"worst {pct(s['w_int8_per_tensor_min_db'])}")
+    print(f"               FP8 per channel:  median {pct(s['w_fp8_median_db'])}, worst {pct(s['w_fp8_min_db'])}"
+          "  (per-tensor FP8 is about the same: the relative error of E4M3 does not depend on the scale)")
     print(f"  activations  {s['act_quantizers']} BN-modelled quantizers; channel spread median "
           f"{s['act_channel_spread_median']:.1f}x (max {s['act_channel_spread_max']:.0f}x); MSE-optimal kappa median "
           f"{s['act_kappa_median']:.1f}")
