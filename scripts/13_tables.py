@@ -980,7 +980,8 @@ def table_static(cfg, out):
           "batch normalisation. Channel spread: 90th/10th percentile of the channel RMS under one per-tensor scale. "
           "Weights: median exact SQNR over the layers, BN folded, per channel and per tensor (FP8 weights: "
           "31.7--32.3\\,dB for all networks). Act.\\ INT8: median predicted injected SQNR "
-          "(Gaussian channels, MSE-optimal range). SQNR$_\\text{add}$: static, in dB. BN gain: median gain of "
+          "(Gaussian channels, MSE-optimal range). SQNR$_\\text{add}$: static, in dB, activation quantizers only, like "
+          "the toolchain value in the last column (Table~\\ref{tab:staticval} adds the weights). BN gain: median gain of "
           "Eq.~\\eqref{eq:bn} over the non-foldable batch normalisations (their number in brackets). "
           "Meas.: SQNR$_\\text{add}$ from FP32 activations and the calibrated scales of the toolchain "
           "(Table~\\ref{tab:prediction}). $^\\dagger$ not used elsewhere in this article (Table~\\ref{tab:staticval})." + note)
