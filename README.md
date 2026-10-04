@@ -164,7 +164,7 @@ Example output (ResNet-50, a network not used elsewhere in the article):
 
 How it works: weights are quantized exactly (INT8 per channel and per tensor, FP8 E4M3); every
 batch-normalised tensor is modelled per channel as N(β, γ²v/(v+ε)) passed through its activation, the range is
-set by minimising the quantization error (Eq. 5), and Lemma 1 gives the injected SQNR; the network value is
+set by minimising the quantization error (Eq. 6), and Lemma 1 gives the injected SQNR; the network value is
 SQNR_add = −10 log₁₀ N − 10 log₁₀⟨ρ²⟩ (−3 dB per doubling of the number N of quantized tensors, dominated by the
 weakest tensors). Width matters only through channel imbalance; parameter count and spatial size do not.
 
@@ -184,7 +184,7 @@ weakest tensors). Width matters only through channel imbalance; parameter count 
 | ***Quantization choices*** | | | | |
 | Number format | INT8 noise depends on range and tails; FP8/FP16 noise does not | 6.02 p + 7.44 dB (E4M3: 31.5 dB, FP16: 73.7 dB) | static FP8 prediction within 0.02–0.20 dB (15 networks); FP8 loss at most 0.4 points | proved, measured |
 | Weight scales | per channel needed for INT8; FP8 indifferent | Lemma 1 on the weights | INT8 37–43 dB per channel vs 26–34 dB per tensor; FP8 about 32 dB either way | exact |
-| Range setting (method, sample, order) | INT8 accuracy of fragile networks depends on it, FP8 does not | Eq. 5 | EfficientNet-B0 24.8 % or 41.7 % depending on the first calibration image | measured |
+| Range setting (method, sample, order) | INT8 accuracy of fragile networks depends on it, FP8 does not | Eq. 6 | EfficientNet-B0 24.8 % or 41.7 % depending on the first calibration image | measured |
 | Static scales under input shift | INT8 loses 20 log₁₀ c and clips for c > 1; FP8 unaffected | Corollary 2 | YOLOv10-X relative INT8 loss 8.1 % → 36.2 % at contrast severity 5, FP8 ≤ 1.9 % | proved, measured |
 | Placement and selective precision | removing the largest contributions Γₙ→ₕ ρₙ² removes their noise | Proposition 3 | DenseNet-121 BN in FP16: 57.4 % → 61.6 %; EfficientNet-B0, 20 layers: 24.8 % → 66.0 % | proved, measured |
 
@@ -193,7 +193,8 @@ Status: *proved* under the stated assumptions, *identity* exact by definition, *
 Read the rows as a checklist for a new network: the structure rows tell where the noise arises and how it propagates,
 the rows on quantization choices what the deployment can still change.
 
-The relative accuracy loss then follows from the head-input SQNR (about ×10 per 12 dB, see below).
+The relative accuracy loss, 100 · (M_FP32 − M_quantized) / M_FP32 % with M the mAP or the top-1 accuracy,
+then follows from the head-input SQNR (about ×10 per 12 dB, see below).
 
 **Where the formulas come from.**
 
@@ -276,7 +277,7 @@ ShuffleNetV2, EfficientNet-B0/B1), densely connected (DenseNet-121/169) and ince
 * **Loss relation:** calibrated on the five TensorRT networks and not refitted, it predicted the measured relative
   loss within the 95 % bootstrap interval in **18 of 25** cases inside its range of validity. The median miss
   is ×1.52, the largest ×2.97 for losses above 1 %, and the Spearman correlation between head-input SQNR and
-  loss is 0.83.
+  loss is −0.83 (lower SQNR, larger loss).
 * **Out of range:** 5 cases have a head-input SQNR outside the range of the calibration networks. They are
   listed but not used.
 * **Propagation by block type:**

@@ -117,6 +117,14 @@ def write(path, body, cols, caption, label, notes=None):
     path.write_text("\n".join(l for l in lines if l) + "\n")
 
 
+def tex_sci(v):
+    """p-value in print form: 0.04, or 3\times10^{-7} for small values."""
+    if v >= 0.001:
+        return f"{v:.2g}"
+    mant, exp = f"{v:.0e}".split("e")
+    return rf"{mant}\times10^{{{int(exp)}}}"
+
+
 def fmt(v, digits=1):
     return "--" if pd.isna(v) else f"{v:.{digits}f}"
 
@@ -991,7 +999,7 @@ def table_static_validation(cfg, out):
             r"\multicolumn{2}{c}{Relative loss (\%)} \\",
             r"\cmidrule{3-5}\cmidrule{6-7}\cmidrule{11-12}",
             r" & & median (dB) & MAE (dB) & rank $\rho$ & static & measured & (dB) & & (\%) & measured [95\% CI] & "
-            r"predicted \\", r"\midrule"]
+            r"from SQNR$_h$ \\", r"\midrule"]
     for m, r in v.iterrows():
         label = MODEL_LABELS.get(m, STATIC_LABELS.get(m, m))
         for k, fmt_ in enumerate(("int8", "fp8")):
@@ -1091,7 +1099,7 @@ def table_extended_check(cfg, out):
     pd.DataFrame(summary).to_csv(t / "extended_summary.csv", index=False)
     fam.to_csv(t / "extended_family.csv", index=False)
     body = [r"Model & Block type & FP32 top-1 & Format & SQNR$_h$ (dB) & $\bar\Gamma$ & \multicolumn{2}{c}{Relative loss (\%)} & In range \\",
-            r"\cmidrule{7-8}", r" & & (\%) & & & & measured [95\% CI] & predicted & \\", r"\midrule"]
+            r"\cmidrule{7-8}", r" & & (\%) & & & & measured [95\% CI] & from SQNR$_h$ & \\", r"\midrule"]
     for m in order:
         for _, r in d[d.model == m].iterrows():
             name = MODEL_LABELS.get(m, STATIC_LABELS.get(m, m)) if r.format == "int8" else ""
@@ -1105,11 +1113,11 @@ def table_extended_check(cfg, out):
                         for fm in ("int8", "fp8") for _, g in fam[fam.format == fm].iterrows())
     notes = (f"ImageNetV2, simulated quantization on the CPU (\\texttt{{44\\_validate\\_static.py}}), 128 calibration images; "
              f"evaluation on 2\\,000 images for the networks of Table~\\ref{{tab:staticval}} and on 1\\,000 images for the "
-             f"others. Predicted: from the measured SQNR$_h$ with the relation of Section~\\ref{{sec:worked}}, calibrated on "
+             f"others. From SQNR$_h$: predicted from the measured SQNR$_h$ with the relation of Section~\\ref{{sec:worked}}, calibrated on "
              f"the five TensorRT networks. In range: SQNR$_h$ within the range of the calibration networks "
              f"({lo_db:.1f} to {hi_db:.1f}\\,dB); rows outside it are reported but not used in the summary. Summary over the "
-             f"rows in range: Spearman $\\rho$ between SQNR$_h$ and the measured loss {sm.loc['both','spearman_rho']:.2f} "
-             f"($n={int(sm.loc['both','n'])}$, $p={sm.loc['both','p']:.1g}$); prediction within the 95\\% CI in "
+             f"rows in range: Spearman $\\rho$ between SQNR$_h$ and the measured loss ${sm.loc['both','spearman_rho']:.2f}$ "
+             f"(negative: lower SQNR, larger loss; $n={int(sm.loc['both','n'])}$, $p={tex_sci(sm.loc['both','p'])}$); prediction within the 95\\% CI in "
              f"{int(sm.loc['both','within_ci'])} of {int(sm.loc['both','n'])} cases; for losses above 1\\%, median miss "
              f"$\\times${sm.loc['both','median_factor_loss_gt_1pct']:.2f}, largest $\\times${sm.loc['both','max_factor_loss_gt_1pct']:.2f}. "
              f"$\\bar\\Gamma$ by block type, median (range): {fam_txt}. $^\\dagger$ not used elsewhere in this article.")

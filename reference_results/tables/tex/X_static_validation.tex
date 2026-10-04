@@ -5,7 +5,7 @@
 \toprule
 Model & Format & \multicolumn{3}{c}{Quantizer SQNR, static $-$ measured} & \multicolumn{2}{c}{SQNR$_\text{add}$ (dB)} & SQNR$_h$ & $\bar\Gamma$ & Top-1 & \multicolumn{2}{c}{Relative loss (\%)} \\
 \cmidrule{3-5}\cmidrule{6-7}\cmidrule{11-12}
- & & median (dB) & MAE (dB) & rank $\rho$ & static & measured & (dB) & & (\%) & measured [95\% CI] & predicted \\
+ & & median (dB) & MAE (dB) & rank $\rho$ & static & measured & (dB) & & (\%) & measured [95\% CI] & from SQNR$_h$ \\
 \midrule
 MobileNetV2$^\dagger$ & INT8 & $+$0.4 & 1.1 & 0.98 & 20.3 & 19.2 & 17.1 & 1.61 & 59.1 & 0.2 [$-$1.0, 1.3] & 1.4 \\
  & FP8 & 0.0 & 0.14 & -- & 12.0 & 12.0 & 6.8 & 3.28 & 53.0 & 10.3 [7.8, 12.6] & 9.8 \\
