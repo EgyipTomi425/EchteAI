@@ -168,7 +168,7 @@ set by minimising the quantization error (Eq. 6), and Lemma 1 gives the injected
 SQNR_add = −10 log₁₀ N − 10 log₁₀⟨ρ²⟩ (−3 dB per doubling of the number N of quantized tensors, dominated by the
 weakest tensors). Width matters only through channel imbalance; parameter count and spatial size do not.
 
-### How network structure and quantization choices change the error (Table C16 of the article)
+### How network structure and quantization choices change the error (Table C14 of the article)
 
 | Property | Effect | Formula | Evidence in the article | Status |
 |---|---|---|---|---|
@@ -267,7 +267,7 @@ The same run also writes a JSON record and per-quantizer CSV files (`results/tab
 2 000 images of the article it is 2.8 % [1.3, 4.3], i.e. single-network losses carry a sampling uncertainty of about
 ±1.5 points.
 
-### Out-of-sample check on 15 networks (Section 3.9, Table C15)
+### Out-of-sample check on 15 networks (Section 3.9, Table 8)
 
 `scripts/45_extended_check.sh` repeats the validation with the settings of the article on 15 ImageNet classifiers
 from four families: residual (ResNet-18/34/50/101, ResNeXt-50, RegNetY-800MF), depthwise (MobileNetV2/V3, MnasNet,
@@ -301,7 +301,7 @@ Results of `44_validate_static.py` on ImageNetV2, 128 calibration and 2 000 eval
 
 \* predicted from one measurement of the quantized head input (next section), not from the static analysis.
 
-The same comparison as a relative error in percent of the signal, r = 10^(−SQNR/20), as in Table C14 of the article.
+The same comparison as a relative error in percent of the signal, r = 10^(−SQNR/20), as in Table C13 of the article.
 Static values need no images. Measured deviations need unlabelled images, and only the accuracy loss needs labels.
 **These percentages are deviations of internal activations, not prediction errors.** Only the last column is a change
 of the final prediction, and it cannot be computed statically:
@@ -377,7 +377,7 @@ propagation to the task head, which one measurement of the quantized network rev
 The relation between head-input SQNR and loss is empirical (least-squares fit on log₁₀ of the loss, five
 networks): the loss grows as r_h^1.64 (95 % CI 1.05–2.23), between a threshold-flip regime (exponent 1) and a
 smooth-loss regime (exponent 2). Formulas, their mathematical status (proved, definition or empirical) and the
-worked examples are in Tables C9–C11 and Fig. C7 of the article. Statistics: exact one-sided
+worked examples are in Tables C9, C10 and 7 and Fig. 9 of the article. Statistics: exact one-sided
 Spearman permutation tests (n = 5), t-based confidence intervals of the slope, leave-one-out prediction (Section 2.12).
 
 ```bash
@@ -402,7 +402,7 @@ clone.
 ## Repairing a fragile network (Sections 3.2 and 3.6)
 
 EfficientNet-B0 collapses in INT8 (65.8 % → 24.8 % top-1, ImageNetV2). What helps, measured on the H200
-(latency and energy at batch size 8 from the shorter protocol of the selective-precision search, Table C17):
+(latency and energy at batch size 8 from the shorter protocol of the selective-precision search, Table C15):
 
 | Remedy | Top-1 | Latency (ms) | Energy (mJ/img) |
 |---|---|---|---|

@@ -29,7 +29,7 @@ WIDE = {"tab:accuracy", "tab:layerstats", "tab:aibo", "tab:engines", "tab:locali
 SMALL = {"tab:models", "tab:datasets"}
 COMPACT = {"tab:selective", "tab:operating", "tab:calibvar"}   # fit the text width with narrower column gaps
 
-# One-sentence reading guide placed before the notes of the result tables (describes the reference results).
+# Reading guide placed at the start of the notes of the result tables (describes the reference results).
 TAKEAWAY = {
     "tab:accuracy": "Compare each row with the FP32 row of the same network. FP16 is lossless for all five networks; "
                     "INT8 always needs the least energy per image, but its accuracy cost ranges from a quarter of a point "
@@ -110,7 +110,7 @@ def write(path, body, cols, caption, label, notes=None):
              rf"\begin{{tabular}}{{@{{}}{cols}@{{}}}}", r"\toprule", *body, r"\botrule", r"\end{tabular}",
 ]
     if label in TAKEAWAY:
-        notes = r"\textbf{What to look for:} " + TAKEAWAY[label] + (" " + notes if notes else "")
+        notes = TAKEAWAY[label] + (" " + notes if notes else "")
     if notes:
         lines.append(rf"\footnotetext{{{notes}}}")
     lines.append(rf"\end{{{env}}}")

@@ -20,5 +20,5 @@ DenseNet-121 & default & 57.4 & 6.6 & 0.785 &  \\
  & BN in FP16 + max calibration & 61.8 & 16.5 & 0.957 & consistency, accuracy \\
 \botrule
 \end{tabular}
-\footnotetext{\textbf{What to look for:} Compare the label-free picks with the accuracy pick: for Faster R-CNN and DenseNet-121 the criteria select the best or a nearly equal variant without labels, whereas for the YOLOv10 detectors they miss the better calibration method, which therefore needs a small labelled set. Accuracy: top-1 (classifiers) or box mAP (detectors) on the evaluation data. Head SQNR and FP32 consistency are computed on the calibration split only. \emph{accuracy} marks the variant a test-set oracle would pick.}
+\footnotetext{Compare the label-free picks with the accuracy pick: for Faster R-CNN and DenseNet-121 the criteria select the best or a nearly equal variant without labels, whereas for the YOLOv10 detectors they miss the better calibration method, which therefore needs a small labelled set. Accuracy: top-1 (classifiers) or box mAP (detectors) on the evaluation data. Head SQNR and FP32 consistency are computed on the calibration split only. \emph{accuracy} marks the variant a test-set oracle would pick.}
 \end{sidewaystable}
