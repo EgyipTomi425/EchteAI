@@ -29,6 +29,76 @@ WIDE = {"tab:accuracy", "tab:layerstats", "tab:aibo", "tab:engines", "tab:locali
 SMALL = {"tab:models", "tab:datasets"}
 COMPACT = {"tab:selective", "tab:operating", "tab:calibvar"}   # fit the text width with narrower column gaps
 
+# One-sentence reading guide placed before the notes of the result tables (describes the reference results).
+TAKEAWAY = {
+    "tab:accuracy": "Compare each row with the FP32 row of the same network. FP16 is lossless for all five networks; "
+                    "INT8 always needs the least energy per image, but its accuracy cost ranges from a quarter of a point "
+                    "(Faster R-CNN) to 41 points (EfficientNet-B0), whereas FP8 stays within half a point of FP32.",
+    "tab:layerstats": r"Ranking the networks by head-input SQNR gives the same order as ranking them by INT8 accuracy "
+                      r"loss in Table~\ref{tab:accuracy}: the lower the SQNR, the larger the loss. The FP16 column lies "
+                      r"far above every INT8 value, so the comparison itself adds no relevant error.",
+    "tab:engines": r"The convolution columns show that every quantized convolution of the INT8 engines runs on INT8 "
+                   r"kernels, and the last column how much data each engine moves: INT8 engines 14--26\% and FP8 "
+                   r"engines 26--39\% of the FP32 bytes. In DenseNet-121, most INT8 and FP16 kernels are reformats "
+                   r"(the copies of its concatenations), which the FP8 engine avoids.",
+    "tab:propagation": r"The injected noise per quantizer is similar in all five networks (27--33\,dB); the networks "
+                       r"differ in how it accumulates. SQNR$_\text{add}$ is the value expected if the noise simply added "
+                       r"up: $\bar\Gamma<1$ means that the network damps the noise (Faster R-CNN, YOLOv10-S), "
+                       r"$\bar\Gamma>1$ that it amplifies it (EfficientNet-B0).",
+    "tab:selective": r"Compare the strategies at the same $k$. For EfficientNet-B0, the iterative ranking reaches the "
+                     r"FP32 accuracy with 20 FP16 convolutions, far more than the FP32 noise ranking or random "
+                     r"subsets; YOLOv10-X recovers most of its loss only at $k=20$, and YOLOv10-S gains nothing because "
+                     r"its noise is spread over the whole network.",
+    "tab:calibvar": r"The sensitivity is smallest for the network that damps the noise most (Faster R-CNN, "
+                    r"$\bar\Gamma=0.13$) and largest for the one that amplifies it (EfficientNet-B0, up to 17 points), so "
+                    r"networks with a large $\bar\Gamma$ should be calibrated and checked on several samples.",
+    "tab:calibmethods": r"INT8 accuracy depends strongly on how the ranges are set: the order-independent procedure is "
+                        r"much worse for the YOLOv10 networks and EfficientNet-B0 but better for DenseNet-121. FP8, whose "
+                        r"range is simply the maximum, stays within half a point of FP32 for all five networks.",
+    "tab:duplicates": r"Only YOLOv10-X in INT8 produces many duplicates (about 15\% of its confident detections); a "
+                      r"class-wise NMS removes them and recovers most of the mAP, and so do 20 ranked FP16 convolutions. "
+                      r"The FP32-fallback rows show that the effect is caused by quantization, not by FP16 arithmetic.",
+    "tab:deployment": r"Within each network, choose the cheapest row whose accuracy loss is acceptable. Faster R-CNN can "
+                      r"run in INT8 as it is; the YOLOv10 detectors lose little in FP8, and YOLOv10-X needs a class-wise "
+                      r"NMS in INT8; DenseNet-121 is cheapest without loss in FP8; EfficientNet-B0 is best served by "
+                      r"FP16, because its FP8 engine uses more energy.",
+    "tab:prediction": r"Compare the two LOO columns with the measured loss. The prediction from the measured head-input "
+                      r"SQNR (LOO$_h$) stays within about a factor of two of the measurement for all five networks, "
+                      r"whereas the one from FP32 statistics alone (LOO$_\text{add}$) misses YOLOv10-X and "
+                      r"EfficientNet-B0 by a factor of four to six, in opposite directions, because it cannot see "
+                      r"$\bar\Gamma$. The FP8 loss is at most 1\% for every network.",
+    "tab:modelcheck": r"Small differences mean that the model describes the measurement: the noise of single quantizers "
+                      r"and the plateau of the layer SQNR agree within 1.4\,dB. The large difference in the head-input "
+                      r"row is $10\log_{10}\bar\Gamma$, the propagation that FP32 statistics cannot provide, and the last "
+                      r"row shows that contrast loss accumulates along the network beyond its injected effect.",
+    "tab:static": r"The INT8 SQNR$_\text{add}$ estimated from the parameters orders the five measured networks with one "
+                  r"exchange, but it lies 8--12.5\,dB above the measured value (last column), so it screens networks "
+                  r"without predicting their deployment numbers. Per-channel weight scales gain 6--11\,dB over a single "
+                  r"scale per tensor.",
+    "tab:staticval": r"Start with the FP8 rows: static and measured quantizer SQNR agree within 0.2\,dB, so the FP8 "
+                     r"noise follows from the parameters alone. For INT8 the static estimate is up to 6.4\,dB optimistic. "
+                     r"The last two columns compare the measured relative loss with the one predicted from SQNR$_h$.",
+    "tab:staticpct": r"Each FP8 quantizer adds about 2.6--2.7\% relative error in every network and each INT8 quantizer "
+                     r"1--5\%, but the error at the head input ranges from about 5\% to more than 100\%: propagation, "
+                     r"not the injected noise, decides the accuracy loss.",
+    "tab:extcheck": r"In the rows within range, compare the measured loss with the prediction of the relation fitted on "
+                    r"the five TensorRT networks; most predictions fall within the 95\% CI. $\bar\Gamma$ stays below 1 "
+                    r"for the residual, dense and inception networks but spreads from 0.5 to almost 7 for the depthwise "
+                    r"ones, so the block type alone does not determine it.",
+    "tab:aibo": r"The savings scale with the FP32 energy of a network, so the large detectors dominate. A small "
+                r"break-even value means that even a very low penalty per critical error outweighs the energy saving "
+                r"(EfficientNet-B0 and DenseNet-121 in INT8).",
+    "tab:placement": r"Compare the label-free picks with the accuracy pick: for Faster R-CNN and DenseNet-121 the criteria "
+                     r"select the best or a nearly equal variant without labels, whereas for the YOLOv10 detectors they "
+                     r"miss the better calibration method, which therefore needs a small labelled set.",
+    "tab:localization": r"Look at the last column: FP16 moves almost no box beyond a 5\% distance error and the YOLOv10 "
+                        r"engines at most 1\% of the boxes, whereas the INT8 and FP8 engines of Faster R-CNN move "
+                        r"5--6\% of the person and car boxes beyond this limit.",
+    "tab:operating": r"Apart from YOLOv10-X in INT8, AP$_{50}$ changes by less than one point. YOLOv10-X in INT8 keeps "
+                     r"its recall but loses precision (93.6 against 80.2\%): the extra boxes are the duplicates of "
+                     r"Table~\ref{tab:duplicates}.",
+}
+
 
 def write(path, body, cols, caption, label, notes=None):
     env = "sidewaystable" if label in WIDE else "table"
@@ -39,6 +109,8 @@ def write(path, body, cols, caption, label, notes=None):
 
              rf"\begin{{tabular}}{{@{{}}{cols}@{{}}}}", r"\toprule", *body, r"\botrule", r"\end{tabular}",
 ]
+    if label in TAKEAWAY:
+        notes = r"\textbf{What to look for:} " + TAKEAWAY[label] + (" " + notes if notes else "")
     if notes:
         lines.append(rf"\footnotetext{{{notes}}}")
     lines.append(rf"\end{{{env}}}")

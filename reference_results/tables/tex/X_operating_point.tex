@@ -23,5 +23,5 @@ YOLOv10-X & FP32 & 86.4 & 75.7 & 65.1 & 54.1 & 62.9 & 81.8 & 91.4 & 93.6 \\
  & FP8 & 86.4 & 75.6 & 64.9 & 53.8 & 62.1 & 81.4 & 91.5 & 93.8 \\
 \botrule
 \end{tabular}
-\footnotetext{AP$_{50}$: average precision at IoU 0.5; AP: COCO AP@[.5:.95] of the class. Recall and precision: all road-user classes (person, bicycle, car, motorcycle, bus, truck) at the operating threshold (score $\geq0.5$) and IoU $\geq0.5$, with the greedy score-ordered matching of COCOeval; $\geq32^2$\,px: COCO medium and large objects. Precision is a lower bound, because COCO does not annotate every visible object.}
+\footnotetext{\textbf{What to look for:} Apart from YOLOv10-X in INT8, AP$_{50}$ changes by less than one point. YOLOv10-X in INT8 keeps its recall but loses precision (93.6 against 80.2\%): the extra boxes are the duplicates of Table~\ref{tab:duplicates}. AP$_{50}$: average precision at IoU 0.5; AP: COCO AP@[.5:.95] of the class. Recall and precision: all road-user classes (person, bicycle, car, motorcycle, bus, truck) at the operating threshold (score $\geq0.5$) and IoU $\geq0.5$, with the greedy score-ordered matching of COCOeval; $\geq32^2$\,px: COCO medium and large objects. Precision is a lower bound, because COCO does not annotate every visible object.}
 \end{table}

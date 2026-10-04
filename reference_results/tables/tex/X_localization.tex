@@ -29,5 +29,5 @@ YOLOv10-X & FP16 & person & 7\,624 & 0.05 & 0.27 & 0.28 & 0.53 & 0.0 \\
  & FP8 & car & 1\,154 & 0.35 & 1.53 & 1.39 & 2.26 & 0.0 \\
 \botrule
 \end{tabular}
-\footnotetext{Same-class matches (IoU $\geq 0.5$) of FP32 detections with a score of at least 0.5. Distance error from Eq.~\eqref{eq:distance} for a camera height of 1.65\,m and object heights of 1.7\,m (person) and 1.5\,m (car).}
+\footnotetext{\textbf{What to look for:} Look at the last column: FP16 moves almost no box beyond a 5\% distance error and the YOLOv10 engines at most 1\% of the boxes, whereas the INT8 and FP8 engines of Faster R-CNN move 5--6\% of the person and car boxes beyond this limit. Same-class matches (IoU $\geq 0.5$) of FP32 detections with a score of at least 0.5. Distance error from Eq.~\eqref{eq:distance} for a camera height of 1.65\,m and object heights of 1.7\,m (person) and 1.5\,m (car).}
 \end{sidewaystable}

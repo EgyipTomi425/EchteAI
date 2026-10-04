@@ -176,7 +176,7 @@ weakest tensors). Width matters only through channel imbalance; parameter count 
 | Depth: number N of quantized tensors | −3 dB per doubling of N | SQNR_add = −10 log₁₀ N − 10 log₁₀⟨ρ²⟩ | 62 (Faster R-CNN) vs 187 (YOLOv10-X) quantizers: 4.8 dB | identity |
 | Weakest tensors (outlier channels, depthwise inputs, gates, attention) | dominate the mean noise; −20 dB per decade of κ = α/σ | SQNR ≈ 52.9 dB − 20 log₁₀ κ | EfficientNet-B0: median quantizer 32.5 dB, mean noise 24.2 dB | proved, measured |
 | Channel imbalance under one scale | narrow channels are quantized coarsely | 10 log₁₀(12 σ_c² / s²) per channel | MobileNetV2: 20.9 dB narrowest vs 42.5 dB widest channel | proved |
-| Activation function | ReLU uses half of the grid; SiLU and unbounded ReLU outputs have heavy tails | – | static INT8 prediction too optimistic by 0.4 (MobileNetV2) to 6.2 dB (DenseNet-121) | measured |
+| Activation function | ReLU uses half of the grid; SiLU and unbounded ReLU outputs have heavy tails | – | static INT8 prediction too optimistic by 0.4 (MobileNetV2) to 6.4 dB (EfficientNet-B1, DenseNet-169) | measured |
 | Operators between quantizer and head | sigmoid gates, max pooling, residual trunks attenuate; non-folded BN amplifies | a_n = r_out / max r_in; BN gain (Eq. A3) | Γ̄ = 0.13 (Faster R-CNN) to 2.89 (EfficientNet-B0); BN gain median 1.24, ρ = 0.83 with the measurement | closed form, measured |
 | Block type | residual and densely connected networks attenuated or passed the noise on (Γ̄ ≤ 1); depthwise networks ranged from attenuation to amplification | Γ̄ | 15 networks: residual 0.09–0.37 (INT8), 0.27–0.97 (FP8); depthwise 0.52–6.86, 0.81–3.28 | measured (simulated); **indicator, not predictor** |
 | Parameter count, input size | no direct effect | – | Faster R-CNN (26.8 M) most robust, EfficientNet-B0 (5.3 M) most fragile | measured |
@@ -189,7 +189,9 @@ weakest tensors). Width matters only through channel imbalance; parameter count 
 | Placement and selective precision | removing the largest contributions Γₙ→ₕ ρₙ² removes their noise | Proposition 3 | DenseNet-121 BN in FP16: 57.4 % → 61.6 %; EfficientNet-B0, 20 layers: 24.8 % → 66.0 % | proved, measured |
 
 Status: *proved* under the stated assumptions, *identity* exact by definition, *exact* computed without approximation,
-*measured* observed in the article, *hypothesis* a pattern in few networks that remains to be tested.
+*closed form* evaluated from the parameters, *measured* observed in the article.
+Read the rows as a checklist for a new network: the structure rows tell where the noise arises and how it propagates,
+the rows on quantization choices what the deployment can still change.
 
 The relative accuracy loss then follows from the head-input SQNR (about ×10 per 12 dB, see below).
 

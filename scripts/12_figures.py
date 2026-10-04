@@ -13,7 +13,7 @@ from pepai.activations import load_activation_table, resolved_inputs
 from pepai.bench import benchmark_medians
 from pepai.config import load_config, results_dir
 from pepai.models import IMAGENET_MEAN, IMAGENET_STD
-from pepai.plots import (BLUE_700, GRID as GRID_LINE, INK_2, MODEL_COLORS, MODEL_LABELS, MODEL_MARKERS, MUTED,
+from pepai.plots import (BLUE_700, GRID as GRID_LINE, INK, INK_2, MODEL_COLORS, MODEL_LABELS, MODEL_MARKERS, MUTED,
                          PRECISION_COLORS, PRECISION_LABELS, SEQUENTIAL, save, style)
 
 ORDER = ["frcnn_r50_fpn", "yolov10s", "yolov10x", "efficientnet_b0", "densenet121"]
@@ -1134,7 +1134,8 @@ def fig_energy_surface(cfg, out, name="efficientnet_b0", strategy="pepai_iter"):
     piv = df.pivot_table(index=["energy", "k"], columns="depth", values="mre_proj", aggfunc="median").sort_index()
     z = np.log10(np.clip(piv.values * 100, 0.3, None))
     X, Y = np.meshgrid(piv.columns.values, piv.index.get_level_values("energy").values)
-    fig = plt.figure(figsize=(6.4, 4.8))
+    # Printed at text width: large, dark labels so that the axes stay readable on paper.
+    fig = plt.figure(figsize=(5.6, 4.6))
     ax = fig.add_subplot(1, 1, 1, projection="3d")
     norm = mpl.colors.Normalize(vmin=np.log10(0.3), vmax=np.log10(30))
     cmap = mpl.colormaps[SEQUENTIAL] if isinstance(SEQUENTIAL, str) else SEQUENTIAL
@@ -1143,15 +1144,22 @@ def fig_energy_surface(cfg, out, name="efficientnet_b0", strategy="pepai_iter"):
     ticks = [0.3, 1, 3, 10, 30]
     ax.set_zticks(np.log10(ticks), [f"{t:g}" for t in ticks])
     ax.set_zlim(np.log10(0.3), np.log10(60))
-    ax.set_xlabel("relative depth")
-    ax.set_ylabel("GPU energy per image (mJ)")
-    ax.set_zlabel("median MRE$_{proj}$ (%)")
-    ax.set_title(f"{MODEL_LABELS[name]}: iterative selective-precision variants", fontsize=9)
+    ax.set_xticks([0, 0.25, 0.5, 0.75, 1], ["0", "0.25", "0.5", "0.75", "1"])
+    ax.set_yticks(np.arange(np.ceil(Y.min() / 5) * 5, Y.max(), 5))
+    ax.tick_params(axis="both", labelsize=11, colors=INK, pad=1)
+    ax.tick_params(axis="z", labelsize=11, colors=INK, pad=4)
+    label = dict(fontsize=12, color=INK)
+    ax.set_xlabel("relative depth", labelpad=8, **label)
+    ax.set_ylabel("energy per image (mJ)", labelpad=10, **label)
+    ax.set_zlabel("median MRE$_{proj}$ (%)", labelpad=10, **label)
+    ax.set_title(f"{MODEL_LABELS[name]}: iterative selective-precision variants", fontsize=12, color=INK)
     ax.view_init(elev=28, azim=-128)
+    ax.set_box_aspect(None, zoom=1.0)
     sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
-    cb = fig.colorbar(sm, ax=ax, shrink=0.55, pad=0.12)
+    cb = fig.colorbar(sm, ax=ax, shrink=0.6, pad=0.1)
     cb.set_ticks(np.log10(ticks), labels=[f"{t:g}" for t in ticks])
-    cb.set_label("MRE$_{proj}$ (%)", fontsize=8)
+    cb.ax.tick_params(labelsize=11, colors=INK)
+    cb.set_label("MRE$_{proj}$ (%)", fontsize=12, color=INK)
     save(fig, out / "R3_energy_surface")
 
 if __name__ == "__main__":
