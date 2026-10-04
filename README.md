@@ -13,7 +13,7 @@ complete pipeline that produced every number of the article (journal extension o
 whose code is kept under the tag [`citds-2026`](https://github.com/EgyipTomi425/EchteAI/tree/citds-2026)).
 
 **Versions.** The code, reference results and manuscript as submitted to *Energy, Sustainability and Society*
-are kept under the tag [`v1.0-submission`](https://github.com/EgyipTomi425/EchteAI/tree/v1.0-submission);
+are kept under the tag [`ess-submission-v1`](https://github.com/EgyipTomi425/EchteAI/tree/ess-submission-v1);
 the code of the conference paper under [`citds-2026`](https://github.com/EgyipTomi425/EchteAI/tree/citds-2026).
 Later changes on `master` (e.g. after review) do not alter these tagged versions.
 

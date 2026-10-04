@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the article below."
+title: "EchteAI: PEP-AI validation of quantized perception models"
+type: software
+version: ess-submission-v1
+license: LGPL-2.1
+repository-code: "https://github.com/EgyipTomi425/EchteAI"
+authors:
+  - family-names: "Menyhárt"
+    given-names: "Tamás"
+    affiliation: "University of Debrecen, Faculty of Informatics"
+  - family-names: "Hajdu"
+    given-names: "András"
+    affiliation: "University of Debrecen, Faculty of Informatics"
+  - family-names: "Lakatos"
+    given-names: "Róbert"
+    affiliation: "University of Debrecen, Faculty of Informatics"
+preferred-citation:
+  type: article
+  title: "PEP-AI Validated Quantization for Energy-Efficient Perception in Intelligent Transportation Systems"
+  journal: "Energy, Sustainability and Society"
+  status: submitted
+  authors:
+    - family-names: "Menyhárt"
+      given-names: "Tamás"
+    - family-names: "Hajdu"
+      given-names: "András"
+    - family-names: "Lakatos"
+      given-names: "Róbert"
