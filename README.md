@@ -22,7 +22,7 @@ whose code is kept under the tag [`citds-2026`](https://github.com/EgyipTomi425/
    miss ×1.5) and shows that the block type indicates Γ̄ but does not determine it.
 2. **FP8 noise does not depend on the data, INT8 noise does.** FP8 E4M3 injects about 31.5 dB (2.7 %) per quantizer
    whatever the activations look like, so the static analysis predicts it within 0.02–0.20 dB (15 networks) without images. INT8
-   noise depends on the range and the tails, and the static estimate is 4–6 dB too optimistic for SiLU and ReLU outputs.
+   noise depends on the range and the tails, and the static estimate is 3–6 dB too optimistic for SiLU and ReLU outputs.
 3. **Noise is not accuracy.** A 25 % deviation of the head-input features cost ResNet-50 only 2.8 % of its top-1
    accuracy. Accuracy needs either labels or the measured head-input SQNR (loss ×10 per 12 dB, within about ×2).
 4. **INT8 is fragile in ways that aggregate accuracy hides:**
@@ -345,7 +345,7 @@ Results:
 |---|---|---|
 | Per-channel or per-tensor weight scales? | network SQNR for both | exact (no model involved) |
 | How much noise does FP8 inject? | per quantizer and for the network | within 0.02–0.20 dB per quantizer (15 networks; 0.02–0.14 dB on the first four) and 0.05 dB for the network on four networks: floating-point noise does not depend on the distribution (Lemma 1) |
-| How much noise does INT8 inject? | per quantizer and for the network | within ~1 dB for bounded or unrectified activations (MobileNetV2); 4–6 dB too optimistic for SiLU and unbounded ReLU outputs (error amplitude underestimated ~2×); 8–12 dB more optimistic than the entropy calibration of TensorRT |
+| How much noise does INT8 inject? | per quantizer and for the network | within ~1 dB for bounded or unrectified activations (MobileNetV2); 3–6 dB too optimistic for SiLU and unbounded ReLU outputs (error amplitude underestimated ~2×); 8–12 dB more optimistic than the entropy calibration of TensorRT |
 | Which batch normalisations amplify noise? | closed-form gain (Eq. A3) | ranks the measured amplification with ρ = 0.83 (DenseNet-121) |
 | How does the network rank? | position among the five measured networks | orders their INT8 loss with ρ = 0.9 (one exchange) |
 | Accuracy loss in %? | **none** | the propagation of the noise is not visible in the parameters; use one measurement (below) |
@@ -360,7 +360,7 @@ propagation to the task head, which one measurement of the quantized network rev
 | 1 | noise of each quantizer (FP32 activations and calibrated scales) | SQNR ≈ 52.9 dB − 20 log₁₀ κ / 31.5 dB | median within 0.6–2.9 dB (INT8), 0.02 dB (FP8) |
 | 2 | head-input SQNR with unit propagation factors (no quantized model) | SQNR_add = −10 log₁₀ Σ ρₙ² | ranks the INT8 loss with ρ = 0.8: screening |
 | 3 | one measurement of the quantized head input → propagation factor | Γ̄ = 10^((SQNR_add − SQNR_h)/10) | ranks the INT8 loss exactly (ρ = 1.0); loss ×10 per 12.2 dB |
-| 4 | plateau over depth; effect of a signal change after calibration | SQNR∞ = −20 log₁₀ ρ + 10 log₁₀(1 − g²); ΔSQNR = 20 log₁₀ c / 0 | within 0.3 dB; full shift underestimated by 2.9–4.5 dB |
+| 4 | plateau over depth; effect of a signal change after calibration | SQNR∞ = −20 log₁₀ ρ + 10 log₁₀(1 − g²); ΔSQNR = 20 log₁₀ c / 0 | within 0.3 dB (YOLOv10), 1.8 dB (Faster R-CNN); full shift underestimated by 2.9–4.5 dB |
 | 5 | format and layers | INT8 if the predicted loss is acceptable; FP16 layers by Γₙ→ₕ ρₙ² | measured ranking needed for single layers |
 
 | Network | SQNR_add, FP32 only (dB) | SQNR_h measured (dB) | Γ̄ | INT8 loss measured | predicted (leave-one-out) |
