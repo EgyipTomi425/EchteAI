@@ -12,6 +12,11 @@ tells from the FP32 parameters alone how much noise INT8, FP8 and FP16 inject in
 complete pipeline that produced every number of the article (journal extension of the CITDS 2026 paper,
 whose code is kept under the tag [`citds-2026`](https://github.com/EgyipTomi425/EchteAI/tree/citds-2026)).
 
+**Versions.** The code, reference results and manuscript as submitted to *Energy, Sustainability and Society*
+are kept under the tag [`v1.0-submission`](https://github.com/EgyipTomi425/EchteAI/tree/v1.0-submission);
+the code of the conference paper under [`citds-2026`](https://github.com/EgyipTomi425/EchteAI/tree/citds-2026).
+Later changes on `master` (e.g. after review) do not alter these tagged versions.
+
 ## Key findings and what to watch for
 
 1. **The error has two parts.** The noise each quantizer injects is predictable from FP32 statistics. How the
@@ -444,6 +449,21 @@ low light: gamma darkening with shot noise), applied to the 500 analysis images:
   keeps every detection at 8.5 dB:
 
 ![Qualitative example: YOLOv10-X in FP32, INT8 and FP8 on a clean and a low-contrast traffic scene](docs/img/S_qualitative.png)
+
+## What is quantized and what is measured
+
+* **Quantized operations.** ModelOpt inserts quantize–dequantize pairs at the inputs of every convolution,
+  fully connected layer (Gemm) and matrix multiplication (MatMul): weights per output channel, activations per
+  tensor. The final fully connected layer of the classifiers and the matrix multiplications of the YOLOv10-X
+  self-attention block are therefore quantized as well, not only the convolutions. Kept in high precision on
+  purpose: the TopK and the DFL box decoder of the YOLOv10 head (`configs/default.yaml`) and all decoding and
+  post-processing. For Faster R-CNN only the backbone and FPN form the engine; its proposal network and ROI heads
+  (which contain its fully connected layers) run in FP32 PyTorch.
+* **What counts only convolutions.** The engine-inspector table (Table C4, "Convolutions executed in") and the
+  selective-precision ranking consider convolutions; everything else is measured over the whole engine.
+* **Energy.** Gross GPU energy of the whole compiled engine, read from the NVML energy counter over at least
+  20 s of sustained CUDA-graph execution and divided by the number of images; the energy above idle is reported
+  as well. Not included: pre-processing, host-device transfers and, for Faster R-CNN, the FP32 detection heads.
 
 ## Limitations
 
